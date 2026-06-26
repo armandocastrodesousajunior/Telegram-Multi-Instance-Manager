@@ -1,0 +1,99 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Instance {
+  id        String    @id @default(uuid())
+  name      String
+  phone     String?
+  status    String    @default("disconnected")
+  session   String?
+  createdAt DateTime  @default(now())
+
+  settings    InstanceSettings?
+  webhooks    Webhook[]
+  audits      ConnectionAudit[]
+  apiLogs     ApiLog[]
+  webhookLogs WebhookLog[]
+}
+
+model InstanceSettings {
+  id         String   @id @default(uuid())
+  instanceId String   @unique
+  instance   Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  // Typing simulation
+  typingEnabled   Boolean @default(true)
+  typingMsPerChar Int     @default(10)
+
+  // Audio action
+  audioActionEnabled Boolean @default(true)
+  audioUseDuration   Boolean @default(true)
+  audioFixedSeconds  Int     @default(3)
+
+  // Video action
+  videoActionEnabled Boolean @default(true)
+  videoUseDuration   Boolean @default(true)
+  videoFixedSeconds  Int     @default(5)
+
+  // Photo action
+  photoActionEnabled Boolean @default(true)
+  photoFixedSeconds  Int     @default(2)
+
+  // Document action
+  documentActionEnabled Boolean @default(true)
+  documentFixedSeconds  Int     @default(2)
+}
+
+model Webhook {
+  id         String   @id @default(uuid())
+  instanceId String
+  instance   Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  name      String
+  url       String
+  events    String   // JSON-encoded string[]
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model ConnectionAudit {
+  id         String   @id @default(uuid())
+  instanceId String
+  instance   Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  event      String   // CONNECT or DISCONNECT
+  phone      String?  // Phone number used
+  createdAt  DateTime @default(now())
+}
+
+model ApiLog {
+  id             String   @id @default(uuid())
+  instanceId     String
+  instance       Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  endpoint       String
+  method         String
+  requestBody    String?  // JSON string
+  responseStatus Int
+  responseBody   String?  // JSON string
+  success        Boolean
+  createdAt      DateTime @default(now())
+}
+
+model WebhookLog {
+  id             String   @id @default(uuid())
+  instanceId     String
+  instance       Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  webhookId      String?  // Can be null if webhook is deleted
+  event          String
+  targetUrl      String
+  requestPayload String?  // JSON string
+  responseStatus Int?
+  responseBody   String?  // JSON string
+  success        Boolean
+  createdAt      DateTime @default(now())
+}

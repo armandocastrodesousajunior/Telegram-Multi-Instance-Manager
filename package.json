@@ -1,0 +1,26 @@
+{
+  "name": "hot-telegram-next",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "prisma generate && next build",
+    "start": "next start -p 3000"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.4.1",
+    "next": "15.2.0",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "telegram": "^2.26.22",
+    "input": "^1.0.1",
+    "lucide-react": "^0.475.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "prisma": "^6.4.1",
+    "typescript": "^5"
+  }
+}
