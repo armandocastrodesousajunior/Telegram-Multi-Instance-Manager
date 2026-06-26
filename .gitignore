@@ -8,3 +8,6 @@ build/
 *.log
 client/dist/
 server/dist/
+dok
+.next
+docker-compose-local.yml

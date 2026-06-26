@@ -1,8 +1,0 @@
-{
-  "/api/instances/route": "app/api/instances/route.js",
-  "/api/instances/[id]/route": "app/api/instances/[id]/route.js",
-  "/api/instances/[id]/audit/route": "app/api/instances/[id]/audit/route.js",
-  "/api/instances/[id]/profile/route": "app/api/instances/[id]/profile/route.js",
-  "/page": "app/page.js",
-  "/instances/[id]/connection/page": "app/instances/[id]/connection/page.js"
-}
