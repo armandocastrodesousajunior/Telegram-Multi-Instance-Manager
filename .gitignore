@@ -11,3 +11,4 @@ server/dist/
 dok
 .next
 docker-compose-local.yml
+version-history.json
