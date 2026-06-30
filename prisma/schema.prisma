@@ -57,9 +57,10 @@ model Webhook {
 
   name      String
   url       String
-  events    String   // JSON-encoded string[]
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
+  events          String   // JSON-encoded string[]
+  active          Boolean  @default(true)
+  includeOutgoing Boolean  @default(true)
+  createdAt       DateTime @default(now())
 }
 
 model ConnectionAudit {

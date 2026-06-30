@@ -25,6 +25,7 @@ services:
     depends_on:
       - db
     environment:
+      - PUBLIC_URL=http://localhost:3000
       # Use the db service name to connect from the Node.js container
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/telegram_multi_instance_manager?schema=public
       - ACCESS_TOKEN=change_me_to_a_strong_secret

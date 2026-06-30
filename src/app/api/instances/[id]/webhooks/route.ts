@@ -28,14 +28,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   try {
     const { id } = await params;
     const body = await req.json();
-    const { name, url, events } = body;
+    const { name, url, events, includeOutgoing = true } = body;
 
     const webhook = await prisma.webhook.create({
       data: {
         instanceId: id,
         name,
         url,
-        events: JSON.stringify(events)
+        events: JSON.stringify(events),
+        includeOutgoing
       }
     });
 

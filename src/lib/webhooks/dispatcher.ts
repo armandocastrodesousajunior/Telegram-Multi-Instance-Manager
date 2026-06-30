@@ -19,6 +19,11 @@ export async function dispatchWebhook(instanceId: string, eventName: string, pay
       }
       
       if (events.includes(eventName) || events.includes('*')) {
+        // Filter outgoing messages if webhook has includeOutgoing = false
+        if (!webhook.includeOutgoing && payload?.isOutgoing) {
+          continue;
+        }
+
         const payloadStr = JSON.stringify({
           event: eventName,
           instanceId,

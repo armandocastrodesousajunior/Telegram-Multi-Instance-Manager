@@ -13,6 +13,7 @@ interface Webhook {
   events: string[];
   name: string;
   active: boolean;
+  includeOutgoing: boolean;
 }
 
 export default function InstanceWebhooksPage() {
@@ -29,6 +30,7 @@ export default function InstanceWebhooksPage() {
   const [formName, setFormName] = useState("");
   const [formUrl, setFormUrl] = useState("");
   const [formEvents, setFormEvents] = useState<string[]>([]);
+  const [formIncludeOutgoing, setFormIncludeOutgoing] = useState(true);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -58,6 +60,7 @@ export default function InstanceWebhooksPage() {
     setFormName(webhook.name || "");
     setFormUrl(webhook.url);
     setFormEvents(webhook.events);
+    setFormIncludeOutgoing(webhook.includeOutgoing ?? true);
     setShowForm(true);
   };
 
@@ -82,13 +85,15 @@ export default function InstanceWebhooksPage() {
         await apiClient.put(`/api/instances/${id}/webhooks/${editingId}`, {
           name: formName,
           url: formUrl,
-          events: formEvents
+          events: formEvents,
+          includeOutgoing: formIncludeOutgoing
         });
       } else {
         await apiClient.post(`/api/instances/${id}/webhooks`, {
           name: formName,
           url: formUrl,
-          events: formEvents
+          events: formEvents,
+          includeOutgoing: formIncludeOutgoing
         });
       }
       setShowForm(false);
@@ -107,6 +112,7 @@ export default function InstanceWebhooksPage() {
     setFormName("");
     setFormUrl("");
     setFormEvents([]);
+    setFormIncludeOutgoing(true);
     setShowForm(true);
   };
 
@@ -206,6 +212,21 @@ export default function InstanceWebhooksPage() {
                     selectedEvents={formEvents} 
                     onChange={(events) => setFormEvents(events)} 
                   />
+                </div>
+
+                <div style={{ marginBottom: "24px", display: "flex", alignItems: "center", gap: "12px" }}>
+                  <label className="switch">
+                    <input 
+                      type="checkbox" 
+                      checked={formIncludeOutgoing} 
+                      onChange={(e) => setFormIncludeOutgoing(e.target.checked)} 
+                    />
+                    <span className="slider round"></span>
+                  </label>
+                  <div>
+                    <div style={{ fontSize: "14px", fontWeight: 500 }}>Incluir Mensagens Enviadas por Mim</div>
+                    <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>Se desativado, recebe apenas as mensagens enviadas pelo lead.</div>
+                  </div>
                 </div>
 
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", borderTop: "1px solid var(--glass-border)", paddingTop: "24px" }}>

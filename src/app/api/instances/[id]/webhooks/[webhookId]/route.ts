@@ -14,6 +14,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (body.url !== undefined) dataToUpdate.url = body.url;
     if (body.events !== undefined) dataToUpdate.events = JSON.stringify(body.events);
     if (body.active !== undefined) dataToUpdate.active = body.active;
+    if (body.includeOutgoing !== undefined) dataToUpdate.includeOutgoing = body.includeOutgoing;
 
     const webhook = await prisma.webhook.update({
       where: { id: webhookId },
