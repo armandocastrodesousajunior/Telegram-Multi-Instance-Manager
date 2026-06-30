@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { checkAuth, unauthorizedResponse } from '@/lib/auth';
 import { telegramManager } from '@/lib/telegram/client';
-import bigInt from 'big-integer';
+
 
 export async function GET(
   req: NextRequest, 
@@ -10,10 +10,6 @@ export async function GET(
   // This is a public route, no authentication required.
 
   const { instanceId, chatId, messageId } = await params;
-  
-  if (!telegramManager.hasClient(instanceId)) {
-    return NextResponse.json({ error: 'Instance not connected' }, { status: 400 });
-  }
 
   try {
     const client = await telegramManager.getClient(instanceId);
@@ -22,7 +18,7 @@ export async function GET(
     const msgId = parseInt(messageId, 10);
     let peer: any = chatId;
     if (!isNaN(Number(chatId))) {
-      peer = bigInt(chatId);
+      peer = BigInt(chatId);
     }
     
     // Fetch the specific message
