@@ -18,6 +18,7 @@ interface InstanceSettings {
   photoFixedSeconds: number | string;
   documentActionEnabled: boolean;
   documentFixedSeconds: number | string;
+  markViewOnceAsRead: boolean;
 }
 
 const Section = ({ title, children }: { title: string, children: React.ReactNode }) => (
@@ -102,6 +103,7 @@ export default function InstanceSettingsPage() {
     photoFixedSeconds: 2,
     documentActionEnabled: true,
     documentFixedSeconds: 2,
+    markViewOnceAsRead: true,
   });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -132,6 +134,7 @@ export default function InstanceSettingsPage() {
         photoFixedSeconds: data.photoFixedSeconds,
         documentActionEnabled: data.documentActionEnabled,
         documentFixedSeconds: data.documentFixedSeconds,
+        markViewOnceAsRead: data.markViewOnceAsRead ?? true,
       });
     } catch (error: any) {
       console.error(error);
@@ -178,6 +181,7 @@ export default function InstanceSettingsPage() {
       videoFixedSeconds: Number(settings.videoFixedSeconds) || 0,
       photoFixedSeconds: Number(settings.photoFixedSeconds) || 0,
       documentFixedSeconds: Number(settings.documentFixedSeconds) || 0,
+      markViewOnceAsRead: settings.markViewOnceAsRead,
     };
 
     try {
@@ -312,6 +316,15 @@ export default function InstanceSettingsPage() {
                   suffix="sec"
                 />
               )}
+            </Section>
+
+            <Section title="Media & Downloads">
+              <Toggle 
+                label="Auto-Read 'View Once' Media" 
+                description="When downloading 'View Once' photos/videos/voice via the webhook media link, automatically mark them as opened/viewed in Telegram so they are destroyed."
+                checked={settings.markViewOnceAsRead} 
+                onChange={(v: boolean) => setSettings({ ...settings, markViewOnceAsRead: v })} 
+              />
             </Section>
 
             <div style={{ marginTop: "32px", display: "flex", justifyContent: "flex-end" }}>

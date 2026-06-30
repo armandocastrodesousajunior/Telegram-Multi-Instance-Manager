@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { checkAuth, unauthorizedResponse } from '@/lib/auth';
 import { telegramManager } from '@/lib/telegram/client';
+import { Api } from 'telegram';
+import { prisma } from '@/lib/db';
 
 
 export async function GET(
@@ -36,6 +38,26 @@ export async function GET(
     const buffer = await client.downloadMedia(message);
     if (!buffer) {
        return NextResponse.json({ error: 'Could not download media or media is unsupported' }, { status: 500 });
+    }
+
+    // Check if the user wants to mark view-once media as read
+    const instanceSettings = await prisma.instanceSettings.findUnique({
+      where: { instanceId }
+    });
+    
+    const shouldMark = instanceSettings ? instanceSettings.markViewOnceAsRead : true;
+
+    if (shouldMark) {
+      // Mark the media as consumed/viewed (essential for view-once media and voice notes)
+      try {
+        await client.invoke(
+          new Api.messages.ReadMessageContents({
+            id: [msgId],
+          })
+        );
+      } catch (readErr) {
+        console.warn("Failed to mark message contents as read:", readErr);
+      }
     }
 
     // Attempt to guess mimeType

@@ -48,6 +48,9 @@ model InstanceSettings {
   // Document action
   documentActionEnabled Boolean @default(true)
   documentFixedSeconds  Int     @default(2)
+
+  // View once media
+  markViewOnceAsRead Boolean @default(true)
 }
 
 model Webhook {
