@@ -28,6 +28,7 @@ export default function DocsPage() {
     { id: "audio", label: "Send Audio", icon: Music },
     { id: "voice", label: "Send Voice Note", icon: Mic },
     { id: "document", label: "Send Document", icon: FileText },
+    { id: "smart", label: "Smart Flow", icon: Play },
   ];
 
   const getEndpointData = (id: string) => {
@@ -38,6 +39,8 @@ export default function DocsPage() {
     
     if (id === "text") {
       payloadFields.push({ name: "text", type: "string", description: "The message text to send.", required: true });
+    } else if (id === "smart") {
+      payloadFields.push({ name: "content", type: "string", description: "The dynamic mixed-content payload containing custom media tags (e.g. <image url='...'></image>).", required: true });
     } else {
       payloadFields.push({ name: "url", type: "string", description: `The URL of the ${id} to send.`, required: true });
       if (id !== "voice") {
@@ -47,11 +50,21 @@ export default function DocsPage() {
         payloadFields.push({ name: "viewOnce", type: "boolean", description: "If true, sends the media as View-Once (self-destructs after viewing). Note: Telegram typically supports this only in 1-on-1 private chats.", required: false });
       }
     }
+    
+    if (id === "text" || id === "image" || id === "video" || id === "document" || id === "smart") {
+      payloadFields.push({ name: "parseMode", type: "string", description: 'Format of the text/caption. Use "html" or "md" (Markdown).', required: false });
+    }
+    
     payloadFields.push({ name: "replyToMsgId", type: "number", description: "The ID of a message to reply to.", required: false });
 
     const exampleJson: any = { chatId: "@username" };
-    if (id === "text") exampleJson.text = "Hello world!";
-    else {
+    if (id === "text") {
+      exampleJson.text = "Hello <b>world</b>!";
+      exampleJson.parseMode = "html";
+    } else if (id === "smart") {
+      exampleJson.content = "oi bb, blz, olha isso daqui\n\n<view_once_video url=\"https://example.com/video.mp4\">gostou??</view_once_video>\n\n<voice url=\"https://example.com/audio.mp3\"></voice>\n\npser bb <b>world</b>";
+      exampleJson.parseMode = "html";
+    } else {
       exampleJson.url = `https://example.com/file.${id === "image" ? "jpg" : id === "video" ? "mp4" : "mp3"}`;
       if (id !== "voice") exampleJson.caption = "Check this out!";
       if (id === "image" || id === "video") exampleJson.viewOnce = true;

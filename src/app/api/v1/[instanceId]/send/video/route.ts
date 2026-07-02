@@ -9,7 +9,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
   try {
     const { instanceId } = await params;
     const body = await req.json();
-    const { chatId, url, caption, replyToMsgId, viewOnce } = body;
+    const { chatId, url, caption, replyToMsgId, viewOnce, parseMode } = body;
 
     if (!chatId || !url) {
       return NextResponse.json({ error: 'chatId and url are required' }, { status: 400 });
@@ -35,6 +35,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
         file: url,
         caption: caption || '',
         replyTo: replyToMsgId,
+        parseMode: parseMode || undefined,
         videoNote: false
       });
     } finally {

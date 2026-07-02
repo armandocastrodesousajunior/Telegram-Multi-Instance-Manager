@@ -19,6 +19,7 @@ interface InstanceSettings {
   documentActionEnabled: boolean;
   documentFixedSeconds: number | string;
   markViewOnceAsRead: boolean;
+  splitMessagesEnabled: boolean;
 }
 
 const Section = ({ title, children }: { title: string, children: React.ReactNode }) => (
@@ -104,6 +105,7 @@ export default function InstanceSettingsPage() {
     documentActionEnabled: true,
     documentFixedSeconds: 2,
     markViewOnceAsRead: true,
+    splitMessagesEnabled: true,
   });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -135,6 +137,7 @@ export default function InstanceSettingsPage() {
         documentActionEnabled: data.documentActionEnabled,
         documentFixedSeconds: data.documentFixedSeconds,
         markViewOnceAsRead: data.markViewOnceAsRead ?? true,
+        splitMessagesEnabled: data.splitMessagesEnabled ?? true,
       });
     } catch (error: any) {
       console.error(error);
@@ -182,6 +185,7 @@ export default function InstanceSettingsPage() {
       photoFixedSeconds: Number(settings.photoFixedSeconds) || 0,
       documentFixedSeconds: Number(settings.documentFixedSeconds) || 0,
       markViewOnceAsRead: settings.markViewOnceAsRead,
+      splitMessagesEnabled: settings.splitMessagesEnabled,
     };
 
     try {
@@ -316,6 +320,15 @@ export default function InstanceSettingsPage() {
                   suffix="sec"
                 />
               )}
+            </Section>
+
+            <Section title="Comportamento de Texto">
+              <Toggle 
+                label="Fracionar Mensagens por Quebra de Linha" 
+                description="Se enviar um texto longo com dupla quebra de linha (\n\n), o sistema vai dividir e enviar em múltiplos balões, simulando um humano digitando."
+                checked={settings.splitMessagesEnabled} 
+                onChange={(v: boolean) => setSettings({ ...settings, splitMessagesEnabled: v })} 
+              />
             </Section>
 
             <Section title="Media & Downloads">

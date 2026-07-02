@@ -3,6 +3,7 @@ import { checkAuth, unauthorizedResponse } from '@/lib/auth';
 import { telegramManager } from '@/lib/telegram/client';
 import { simulateTyping } from '@/lib/telegram/actions';
 import { logApiRequest } from '@/lib/logger';
+import { prisma } from '@/lib/db';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ instanceId: string }> }) {
   if (!checkAuth(req)) return unauthorizedResponse();
@@ -10,7 +11,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
   try {
     const { instanceId } = await params;
     const body = await req.json();
-    const { chatId, text, replyToMsgId } = body;
+    const { chatId, text, replyToMsgId, parseMode } = body;
 
     if (!chatId || !text) {
       const err = { error: 'chatId and text are required' };
@@ -19,14 +20,44 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     }
 
     const client = await telegramManager.getClient(instanceId);
-    await simulateTyping(client, instanceId, chatId, text);
-
-    const message = await client.sendMessage(chatId, {
-      message: text,
-      replyTo: replyToMsgId
+    
+    // Fetch instance settings to check for split messages option
+    const settings = await prisma.instanceSettings.findUnique({
+      where: { instanceId }
     });
+    
+    const splitEnabled = settings ? settings.splitMessagesEnabled : true;
+    let resData: any;
 
-    const resData = { success: true, messageId: message.id };
+    if (splitEnabled && text.includes('\n\n')) {
+      const parts = text.split('\n\n').filter((p: string) => p.trim() !== '');
+      const messageIds: number[] = [];
+      
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        await simulateTyping(client, instanceId, chatId, part);
+        
+        const message = await client.sendMessage(chatId, {
+          message: part,
+          replyTo: i === 0 ? replyToMsgId : undefined, // Reply only to the first part
+          parseMode: parseMode || undefined
+        });
+        messageIds.push(message.id);
+      }
+      
+      resData = { success: true, isSplit: true, messageIds };
+    } else {
+      // Normal behavior
+      await simulateTyping(client, instanceId, chatId, text);
+
+      const message = await client.sendMessage(chatId, {
+        message: text,
+        replyTo: replyToMsgId,
+        parseMode: parseMode || undefined
+      });
+
+      resData = { success: true, messageId: message.id };
+    }
     await logApiRequest({ instanceId, endpoint: '/send/text', method: 'POST', requestBody: body, responseStatus: 200, responseBody: resData, success: true });
     return NextResponse.json(resData);
   } catch (err: any) {

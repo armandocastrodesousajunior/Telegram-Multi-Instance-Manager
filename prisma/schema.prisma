@@ -51,6 +51,9 @@ model InstanceSettings {
 
   // View once media
   markViewOnceAsRead Boolean @default(true)
+
+  // Message splitting
+  splitMessagesEnabled Boolean @default(true)
 }
 
 model Webhook {
