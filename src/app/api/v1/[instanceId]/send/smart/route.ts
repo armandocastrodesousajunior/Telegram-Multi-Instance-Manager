@@ -6,6 +6,10 @@ import { logApiRequest } from '@/lib/logger';
 import { prisma } from '@/lib/db';
 import { CustomFile } from 'telegram/client/uploads';
 import * as mm from 'music-metadata';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+import crypto from 'crypto';
 
 interface SmartAction {
   type: string;
@@ -123,9 +127,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
           };
         }
 
+        let fileData: any = action.url!;
+
         try {
           console.log(`[SmartRoute] Processando ação de mídia: type=${action.type}, url=${action.url}`);
-          let fileData: any = action.url!;
           let realDurationMs = 0;
           
           try {
@@ -156,15 +161,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
               } catch(e) {}
               const finalFilename = action.filename || `media.${ext}`;
               
-              // Instanciamos o CustomFile original da biblioteca
-              const customFile = new CustomFile(finalFilename, buffer.byteLength, "", buffer);
+              // Solução Definitiva para Next.js:
+              // Em vez de passar CustomFile/Buffer que o GramJS rejeita pelo conflito CJS/ESM,
+              // Salvamos num arquivo temporário ultra-rápido com UUID para evitar colisão em concorrência extrema
+              const uniqueId = crypto.randomUUID();
+              const tempPath = path.join(os.tmpdir(), `${uniqueId}_${finalFilename}`);
+              fs.writeFileSync(tempPath, buffer);
+              console.log(`[SmartRoute] Arquivo temporário criado em: ${tempPath}`);
               
-              console.log(`[SmartRoute] Fazendo o upload do arquivo para os servidores do Telegram...`);
-              fileData = await client.uploadFile({
-                file: customFile,
-                workers: 1
-              });
-              console.log(`[SmartRoute] Arquivo carregado na nuvem do Telegram com sucesso.`);
+              fileData = tempPath; // Passando a string (caminho), o GramJS acerta 100%
             } else {
               console.error(`[SmartRoute] Falha ao baixar mídia de ${action.url!}: ${res.status} ${res.statusText}`);
             }
@@ -192,6 +197,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
           throw uploadErr; // Propaga para o catch da rota principal
         } finally {
           client.invoke = originalInvoke;
+          // Limpando o arquivo temporário do servidor para não gastar SSD
+          if (typeof fileData === 'string' && fileData.includes(os.tmpdir())) {
+            try {
+              if (fs.existsSync(fileData)) {
+                fs.unlinkSync(fileData);
+                console.log(`[SmartRoute] Arquivo temporário excluído: ${fileData}`);
+              }
+            } catch (e) {
+              console.error(`[SmartRoute] Falha ao excluir temp file: ${fileData}`, e);
+            }
+          }
         }
       }
 
