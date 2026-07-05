@@ -4,6 +4,7 @@ import { telegramManager } from '@/lib/telegram/client';
 import { simulateTyping, simulateFileAction } from '@/lib/telegram/actions';
 import { logApiRequest } from '@/lib/logger';
 import { prisma } from '@/lib/db';
+import { CustomFile } from 'telegram/client/uploads';
 
 interface SmartAction {
   type: string;
@@ -124,8 +125,44 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
         }
 
         try {
+          console.log(`[SmartRoute] Processando ação de mídia: type=${action.type}, url=${action.url}`);
+          let fileData: any = action.url!;
+          
+          try {
+            console.log(`[SmartRoute] Iniciando download do buffer da URL: ${action.url!}`);
+            const res = await fetch(action.url!);
+            console.log(`[SmartRoute] Resposta do fetch: status=${res.status}, ok=${res.ok}`);
+            if (res.ok) {
+              const arrayBuffer = await res.arrayBuffer();
+              const buffer = Buffer.from(arrayBuffer);
+              console.log(`[SmartRoute] Buffer criado com sucesso. Tamanho: ${buffer.byteLength} bytes`);
+              let ext = 'bin';
+              try {
+                const urlPath = new URL(action.url!).pathname;
+                const parts = urlPath.split('.');
+                if (parts.length > 1) ext = parts.pop() || 'bin';
+              } catch(e) {}
+              const finalFilename = action.filename || `media.${ext}`;
+              
+              // Instanciamos o CustomFile original da biblioteca
+              const customFile = new CustomFile(finalFilename, buffer.byteLength, "", buffer);
+              
+              console.log(`[SmartRoute] Fazendo o upload do arquivo para os servidores do Telegram...`);
+              fileData = await client.uploadFile({
+                file: customFile,
+                workers: 1
+              });
+              console.log(`[SmartRoute] Arquivo carregado na nuvem do Telegram com sucesso.`);
+            } else {
+              console.error(`[SmartRoute] Falha ao baixar mídia de ${action.url!}: ${res.status} ${res.statusText}`);
+            }
+          } catch (fetchErr) {
+            console.error("[SmartRoute] Exceção ao baixar buffer da mídia, caindo para URL direta:", fetchErr);
+          }
+
+          console.log(`[SmartRoute] Enviando mídia para o Telegram...`);
           const msg = await client.sendFile(chatId, {
-            file: action.url!,
+            file: fileData,
             caption: action.caption || '',
             forceDocument: isDoc,
             voiceNote: isVoice,
@@ -133,7 +170,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
             replyTo: replyTo,
             parseMode: parseMode || undefined
           });
+          console.log(`[SmartRoute] Mídia enviada com sucesso. Msg ID: ${msg.id}`);
           messageIds.push(msg.id);
+        } catch (uploadErr) {
+          console.error(`[SmartRoute] Erro fatal ao enviar mídia:`, uploadErr);
+          throw uploadErr; // Propaga para o catch da rota principal
         } finally {
           client.invoke = originalInvoke;
         }

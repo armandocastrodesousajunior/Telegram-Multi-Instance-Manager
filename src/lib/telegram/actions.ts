@@ -10,11 +10,16 @@ export async function simulateTyping(client: TelegramClient, instanceId: string,
   const duration = Math.min(text.length * msPerChar, 30000); // Max 30s
   
   if (duration > 0) {
-    await client.invoke(new Api.messages.SetTyping({
-      peer: chatId,
-      action: new Api.SendMessageTypingAction()
-    }));
-    await new Promise(resolve => setTimeout(resolve, duration));
+    try {
+      const peer = await client.getInputEntity(chatId);
+      await client.invoke(new Api.messages.SetTyping({
+        peer: peer,
+        action: new Api.SendMessageTypingAction()
+      }));
+      await new Promise(resolve => setTimeout(resolve, duration));
+    } catch (err) {
+      console.error('Failed to simulate typing:', err);
+    }
   }
 }
 
@@ -46,10 +51,15 @@ export async function simulateFileAction(client: TelegramClient, instanceId: str
   }
 
   if (enabled && action) {
-    await client.invoke(new Api.messages.SetTyping({
-      peer: chatId,
-      action
-    }));
-    await new Promise(resolve => setTimeout(resolve, duration));
+    try {
+      const peer = await client.getInputEntity(chatId);
+      await client.invoke(new Api.messages.SetTyping({
+        peer: peer,
+        action
+      }));
+      await new Promise(resolve => setTimeout(resolve, duration));
+    } catch (err) {
+      console.error('Failed to simulate file action:', err);
+    }
   }
 }
