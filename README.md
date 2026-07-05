@@ -42,6 +42,15 @@ O Docker baixará o PostgreSQL e compilará o painel. Após o término, o acesso
 
 ---
 
+## 🎥 Dica de Otimização de Vídeos
+
+Se você for realizar disparos de vídeos muito grandes (como 15MB+), recomendamos fortemente que os vídeos estejam "Otimizados para a Web" (*Fast Start*). Caso contrário, os servidores da API do Telegram podem falhar ao tentar ler os metadados do seu vídeo e retornar o erro `WEBPAGE_CURL_FAILED`.
+
+Para otimizar e comprimir seus vídeos automaticamente de forma fácil e em lote, sugerimos utilizar o **[HandBrake](https://handbrake-online.com/)**.
+Basta importar os seus vídeos, marcar a caixinha **"Web Optimized"** e exportar. Os seus vídeos ficarão mais leves e serão entregues pelo Telegram de forma instantânea!
+
+---
+
 ## 📖 Documentação da API
 
 Quando você estiver logado no painel usando sua chave mestre (`ACCESS_TOKEN`), você poderá clicar no botão **"API Docs"** diretamente no sistema. 
