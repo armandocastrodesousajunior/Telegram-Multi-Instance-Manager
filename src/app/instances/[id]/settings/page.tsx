@@ -7,6 +7,8 @@ import { Save } from "lucide-react";
 
 interface InstanceSettings {
   typingEnabled: boolean;
+  typingUseDuration: boolean;
+  typingFixedSeconds: number | string;
   typingMsPerChar: number | string;
   audioActionEnabled: boolean;
   audioUseDuration: boolean;
@@ -93,6 +95,8 @@ export default function InstanceSettingsPage() {
 
   const [settings, setSettings] = useState<InstanceSettings>({
     typingEnabled: true,
+    typingUseDuration: true,
+    typingFixedSeconds: 5,
     typingMsPerChar: 10,
     audioActionEnabled: true,
     audioUseDuration: true,
@@ -125,6 +129,8 @@ export default function InstanceSettingsPage() {
       const data = await apiClient.get<InstanceSettings>(`/api/instances/${id}/settings`);
       setSettings({
         typingEnabled: data.typingEnabled,
+        typingUseDuration: data.typingUseDuration ?? true,
+        typingFixedSeconds: data.typingFixedSeconds ?? 5,
         typingMsPerChar: data.typingMsPerChar,
         audioActionEnabled: data.audioActionEnabled,
         audioUseDuration: data.audioUseDuration,
@@ -152,8 +158,13 @@ export default function InstanceSettingsPage() {
 
     const errors = [];
     if (settings.typingEnabled) {
-      const v = Number(settings.typingMsPerChar);
-      if (isNaN(v) || v < 0 || v > 5000) errors.push("Typing MS per char must be between 0 and 5000.");
+      if (!settings.typingUseDuration) {
+        const v = Number(settings.typingFixedSeconds);
+        if (isNaN(v) || v < 0 || v > 60) errors.push("Typing fixed wait time must be between 0 and 60 seconds.");
+      } else {
+        const v = Number(settings.typingMsPerChar);
+        if (isNaN(v) || v < 0 || v > 5000) errors.push("Typing MS per char must be between 0 and 5000.");
+      }
     }
     if (settings.audioActionEnabled && !settings.audioUseDuration) {
       const v = Number(settings.audioFixedSeconds);
@@ -179,6 +190,7 @@ export default function InstanceSettingsPage() {
 
     const payload = {
       ...settings,
+      typingFixedSeconds: Number(settings.typingFixedSeconds) || 0,
       typingMsPerChar: Number(settings.typingMsPerChar) || 0,
       audioFixedSeconds: Number(settings.audioFixedSeconds) || 0,
       videoFixedSeconds: Number(settings.videoFixedSeconds) || 0,
@@ -224,13 +236,30 @@ export default function InstanceSettingsPage() {
                 onChange={(v: boolean) => setSettings({ ...settings, typingEnabled: v })} 
               />
               {settings.typingEnabled && (
-                <NumberInput 
-                  label="Milliseconds per Character" 
-                  value={settings.typingMsPerChar} 
-                  onChange={(v: number) => setSettings({ ...settings, typingMsPerChar: v })} 
-                  max={5000}
-                  suffix="ms/char"
-                />
+                <>
+                  <Toggle 
+                    label="Use real duration (calc)" 
+                    description="Calculates exact wait time based on message length."
+                    checked={settings.typingUseDuration} 
+                    onChange={(v: boolean) => setSettings({ ...settings, typingUseDuration: v })} 
+                  />
+                  {settings.typingUseDuration ? (
+                    <NumberInput 
+                      label="Milliseconds per Character" 
+                      value={settings.typingMsPerChar} 
+                      onChange={(v: number) => setSettings({ ...settings, typingMsPerChar: v })} 
+                      max={5000}
+                      suffix="ms/char"
+                    />
+                  ) : (
+                    <NumberInput 
+                      label="Fixed wait time" 
+                      value={settings.typingFixedSeconds} 
+                      onChange={(v: number) => setSettings({ ...settings, typingFixedSeconds: v })} 
+                      suffix="sec"
+                    />
+                  )}
+                </>
               )}
             </Section>
 

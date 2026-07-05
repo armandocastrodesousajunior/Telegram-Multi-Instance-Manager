@@ -5,6 +5,7 @@ import { simulateTyping, simulateFileAction } from '@/lib/telegram/actions';
 import { logApiRequest } from '@/lib/logger';
 import { prisma } from '@/lib/db';
 import { CustomFile } from 'telegram/client/uploads';
+import * as mm from 'music-metadata';
 
 interface SmartAction {
   type: string;
@@ -112,8 +113,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
         else if (isVideo) simAction = 'video';
         else if (isAudio || isVoice) simAction = 'audio';
 
-        await simulateFileAction(client, instanceId, chatId, simAction);
-
         const originalInvoke = client.invoke.bind(client);
         if (isViewOnce) {
           client.invoke = async (req: any) => {
@@ -127,6 +126,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
         try {
           console.log(`[SmartRoute] Processando ação de mídia: type=${action.type}, url=${action.url}`);
           let fileData: any = action.url!;
+          let realDurationMs = 0;
           
           try {
             console.log(`[SmartRoute] Iniciando download do buffer da URL: ${action.url!}`);
@@ -136,6 +136,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
               const arrayBuffer = await res.arrayBuffer();
               const buffer = Buffer.from(arrayBuffer);
               console.log(`[SmartRoute] Buffer criado com sucesso. Tamanho: ${buffer.byteLength} bytes`);
+              
+              // Extraindo a duração real usando music-metadata
+              try {
+                const metadata = await mm.parseBuffer(buffer, res.headers.get('content-type') || undefined);
+                if (metadata.format.duration) {
+                  realDurationMs = Math.round(metadata.format.duration * 1000);
+                  console.log(`[SmartRoute] Duração real extraída: ${realDurationMs} ms`);
+                }
+              } catch (metaErr) {
+                console.log(`[SmartRoute] Aviso: Falha ao extrair duração real da mídia:`, metaErr);
+              }
+
               let ext = 'bin';
               try {
                 const urlPath = new URL(action.url!).pathname;
@@ -159,6 +171,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
           } catch (fetchErr) {
             console.error("[SmartRoute] Exceção ao baixar buffer da mídia, caindo para URL direta:", fetchErr);
           }
+
+          // Agora que temos a duração (se aplicável), executamos a simulação de ação visual (ex: gravando áudio)
+          await simulateFileAction(client, instanceId, chatId, simAction, realDurationMs);
 
           console.log(`[SmartRoute] Enviando mídia para o Telegram...`);
           const msg = await client.sendFile(chatId, {

@@ -28,8 +28,10 @@ model InstanceSettings {
   instance   Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
 
   // Typing simulation
-  typingEnabled   Boolean @default(true)
-  typingMsPerChar Int     @default(10)
+  typingEnabled      Boolean @default(true)
+  typingUseDuration  Boolean @default(true)
+  typingFixedSeconds Int     @default(5)
+  typingMsPerChar    Int     @default(10)
 
   // Audio action
   audioActionEnabled Boolean @default(true)
