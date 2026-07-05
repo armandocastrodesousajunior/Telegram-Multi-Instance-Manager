@@ -42,6 +42,7 @@ model InstanceSettings {
   videoActionEnabled Boolean @default(true)
   videoUseDuration   Boolean @default(true)
   videoFixedSeconds  Int     @default(5)
+  downloadVideoFirst Boolean @default(true)
 
   // Photo action
   photoActionEnabled Boolean @default(true)

@@ -16,6 +16,7 @@ interface InstanceSettings {
   videoActionEnabled: boolean;
   videoUseDuration: boolean;
   videoFixedSeconds: number | string;
+  downloadVideoFirst: boolean;
   photoActionEnabled: boolean;
   photoFixedSeconds: number | string;
   documentActionEnabled: boolean;
@@ -104,6 +105,7 @@ export default function InstanceSettingsPage() {
     videoActionEnabled: true,
     videoUseDuration: true,
     videoFixedSeconds: 5,
+    downloadVideoFirst: true,
     photoActionEnabled: true,
     photoFixedSeconds: 2,
     documentActionEnabled: true,
@@ -138,6 +140,7 @@ export default function InstanceSettingsPage() {
         videoActionEnabled: data.videoActionEnabled,
         videoUseDuration: data.videoUseDuration,
         videoFixedSeconds: data.videoFixedSeconds,
+        downloadVideoFirst: data.downloadVideoFirst ?? true,
         photoActionEnabled: data.photoActionEnabled,
         photoFixedSeconds: data.photoFixedSeconds,
         documentActionEnabled: data.documentActionEnabled,
@@ -194,6 +197,7 @@ export default function InstanceSettingsPage() {
       typingMsPerChar: Number(settings.typingMsPerChar) || 0,
       audioFixedSeconds: Number(settings.audioFixedSeconds) || 0,
       videoFixedSeconds: Number(settings.videoFixedSeconds) || 0,
+      downloadVideoFirst: settings.downloadVideoFirst,
       photoFixedSeconds: Number(settings.photoFixedSeconds) || 0,
       documentFixedSeconds: Number(settings.documentFixedSeconds) || 0,
       markViewOnceAsRead: settings.markViewOnceAsRead,
@@ -300,12 +304,20 @@ export default function InstanceSettingsPage() {
               {settings.videoActionEnabled && (
                 <>
                   <Toggle 
-                    label="Use real duration" 
-                    description="Calculates exact wait time based on the video file duration."
-                    checked={settings.videoUseDuration} 
-                    onChange={(v: boolean) => setSettings({ ...settings, videoUseDuration: v })} 
+                    label="Baixar Vídeo no Servidor" 
+                    description="Permite calcular Duração Real exata e evita falhas em vídeos gigantes no Telegram. Se desmarcado, envia apenas o link."
+                    checked={settings.downloadVideoFirst} 
+                    onChange={(v: boolean) => setSettings({ ...settings, downloadVideoFirst: v })} 
                   />
-                  {!settings.videoUseDuration && (
+                  {settings.downloadVideoFirst && (
+                    <Toggle 
+                      label="Use real duration" 
+                      description="Calculates exact wait time based on the video file duration."
+                      checked={settings.videoUseDuration} 
+                      onChange={(v: boolean) => setSettings({ ...settings, videoUseDuration: v })} 
+                    />
+                  )}
+                  {(!settings.videoUseDuration || !settings.downloadVideoFirst) && (
                     <NumberInput 
                       label="Fixed wait time" 
                       value={settings.videoFixedSeconds} 

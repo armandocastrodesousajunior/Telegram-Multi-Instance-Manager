@@ -133,10 +133,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
           console.log(`[SmartRoute] Processando ação de mídia: type=${action.type}, url=${action.url}`);
           let realDurationMs = 0;
           
-          try {
-            console.log(`[SmartRoute] Iniciando download do buffer da URL: ${action.url!}`);
-            const res = await fetch(action.url!);
-            console.log(`[SmartRoute] Resposta do fetch: status=${res.status}, ok=${res.ok}`);
+          if (isVideo && settings?.downloadVideoFirst) {
+            try {
+              console.log(`[SmartRoute] Iniciando download do buffer da URL: ${action.url!}`);
+              const res = await fetch(action.url!);
+              console.log(`[SmartRoute] Resposta do fetch: status=${res.status}, ok=${res.ok}`);
             if (res.ok) {
               const arrayBuffer = await res.arrayBuffer();
               const buffer = Buffer.from(arrayBuffer);
@@ -176,8 +177,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
           } catch (fetchErr) {
             console.error("[SmartRoute] Exceção ao baixar buffer da mídia, caindo para URL direta:", fetchErr);
           }
+        } else {
+          console.log(`[SmartRoute] Download bypassado para ${action.type}. Enviando URL diretamente.`);
+        }
 
-          // Agora que temos a duração (se aplicável), executamos a simulação de ação visual (ex: gravando áudio)
+        // Agora que temos a duração (se aplicável), executamos a simulação de ação visual (ex: gravando áudio)
           await simulateFileAction(client, instanceId, chatId, simAction, realDurationMs);
 
           console.log(`[SmartRoute] Enviando mídia para o Telegram...`);
