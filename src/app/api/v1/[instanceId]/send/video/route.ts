@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { checkAuth, unauthorizedResponse } from '@/lib/auth';
 import { telegramManager } from '@/lib/telegram/client';
 import { simulateFileAction } from '@/lib/telegram/actions';
+import { getCachedMedia, saveMediaToCache } from '@/lib/telegram/mediaCache';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+import crypto from 'crypto';
+import { prisma } from '@/lib/db';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ instanceId: string }> }) {
   if (!checkAuth(req)) return unauthorizedResponse();
@@ -29,17 +35,61 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
       };
     }
 
+    const settings = await prisma.instanceSettings.findUnique({ where: { instanceId } });
+    
+    let fileData: any = url;
+    let tempPath: string | null = null;
+    let cachedMedia = null;
+
+    if (settings?.mediaCacheEnabled) {
+      const cached = await getCachedMedia(instanceId, url);
+      if (cached) {
+        cachedMedia = cached.media;
+        fileData = cachedMedia;
+      }
+    }
+
+    if (viewOnce && !cachedMedia) {
+      try {
+        const res = await fetch(url);
+        if (res.ok) {
+          const arrayBuffer = await res.arrayBuffer();
+          const buffer = Buffer.from(arrayBuffer);
+          const uniqueId = crypto.randomUUID();
+          let ext = 'mp4';
+          try {
+            const urlPath = new URL(url).pathname;
+            const parts = urlPath.split('.');
+            if (parts.length > 1) ext = parts.pop() || 'mp4';
+          } catch(e) {}
+          
+          tempPath = path.join(os.tmpdir(), `${uniqueId}_video.${ext}`);
+          fs.writeFileSync(tempPath, buffer);
+          fileData = tempPath; // Passa o caminho físico para forçar o UploadedDocument
+        }
+      } catch (fetchErr) {
+        console.error("Falha ao baixar vídeo para viewOnce, caindo para URL direta:", fetchErr);
+      }
+    }
+
     let message;
     try {
       message = await client.sendFile(chatId, {
-        file: url,
+        file: fileData,
         caption: caption || '',
         replyTo: replyToMsgId,
         parseMode: parseMode || undefined,
         videoNote: false
       });
+      
+      if (settings?.mediaCacheEnabled && !cachedMedia) {
+        await saveMediaToCache(instanceId, url, message, 0);
+      }
     } finally {
       client.invoke = originalInvoke;
+      if (tempPath && fs.existsSync(tempPath)) {
+        try { fs.unlinkSync(tempPath); } catch (e) {}
+      }
     }
 
     return NextResponse.json({ success: true, messageId: message.id });

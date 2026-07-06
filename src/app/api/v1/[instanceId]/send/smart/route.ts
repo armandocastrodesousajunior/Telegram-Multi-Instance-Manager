@@ -10,6 +10,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import crypto from 'crypto';
+import { getCachedMedia, saveMediaToCache } from '@/lib/telegram/mediaCache';
 
 interface SmartAction {
   type: string;
@@ -17,6 +18,9 @@ interface SmartAction {
   url?: string;
   filename?: string;
   caption?: string;
+  prefetchedPath?: string;
+  prefetchedDuration?: number;
+  cachedMedia?: any;
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ instanceId: string }> }) {
@@ -88,10 +92,73 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
       }
     }
 
+    // ==========================================
+    // STAGE 1: PRE-FETCH DE MÍDIAS
+    // ==========================================
+    for (const action of actions) {
+      if (action.type !== 'text') {
+        const isVideo = action.type.includes('video');
+        
+        if (settings?.mediaCacheEnabled) {
+          try {
+            const cached = await getCachedMedia(instanceId, action.url!);
+            if (cached) {
+              action.cachedMedia = cached.media;
+              action.prefetchedDuration = cached.durationMs;
+              console.log(`[SmartRoute] 🚀 Mídia carregada do Cache Zero-Upload: ${action.url}`);
+              continue; // Pula todo o pre-fetch físico!
+            }
+          } catch(e) {
+            console.error(`[SmartRoute] Erro ao ler cache:`, e);
+          }
+        }
+
+        if (isVideo && settings?.downloadVideoFirst) {
+          try {
+            console.log(`[SmartRoute] Pre-fetching mídia: ${action.url!}`);
+            const res = await fetch(action.url!);
+            if (res.ok) {
+              const arrayBuffer = await res.arrayBuffer();
+              const buffer = Buffer.from(arrayBuffer);
+              
+              let realDurationMs = 0;
+              try {
+                const metadata = await mm.parseBuffer(buffer, res.headers.get('content-type') || undefined);
+                if (metadata.format.duration) realDurationMs = Math.round(metadata.format.duration * 1000);
+              } catch (e) {}
+
+              let ext = 'bin';
+              try {
+                const parts = new URL(action.url!).pathname.split('.');
+                if (parts.length > 1) ext = parts.pop() || 'bin';
+              } catch(e) {}
+              
+              const uniqueId = crypto.randomUUID();
+              const finalFilename = action.filename || `media.${ext}`;
+              const tempPath = path.join(os.tmpdir(), `${uniqueId}_${finalFilename}`);
+              fs.writeFileSync(tempPath, buffer);
+              
+              action.prefetchedPath = tempPath;
+              action.prefetchedDuration = realDurationMs;
+              console.log(`[SmartRoute] Pre-fetch concluído: ${tempPath} (${realDurationMs}ms)`);
+            } else {
+              console.error(`[SmartRoute] Falha no pre-fetch de ${action.url!}: ${res.status}`);
+            }
+          } catch (e) {
+            console.error(`[SmartRoute] Exceção no pre-fetch de ${action.url!}:`, e);
+          }
+        }
+      }
+    }
+
     const messageIds: number[] = [];
     let firstSent = false;
 
-    // Execute actions sequentially
+    // ==========================================
+    // STAGE 2: EXECUÇÃO EM TEMPO REAL
+    // ==========================================
+    try {
+      // Execute actions sequentially
     for (let i = 0; i < actions.length; i++) {
       const action = actions[i];
       const replyTo = !firstSent ? replyToMsgId : undefined;
@@ -127,61 +194,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
           };
         }
 
-        let fileData: any = action.url!;
+        let fileData: any = action.cachedMedia || action.prefetchedPath || action.url!;
+        let realDurationMs = action.prefetchedDuration || 0;
 
         try {
           console.log(`[SmartRoute] Processando ação de mídia: type=${action.type}, url=${action.url}`);
-          let realDurationMs = 0;
-          
-          if (isVideo && settings?.downloadVideoFirst) {
-            try {
-              console.log(`[SmartRoute] Iniciando download do buffer da URL: ${action.url!}`);
-              const res = await fetch(action.url!);
-              console.log(`[SmartRoute] Resposta do fetch: status=${res.status}, ok=${res.ok}`);
-            if (res.ok) {
-              const arrayBuffer = await res.arrayBuffer();
-              const buffer = Buffer.from(arrayBuffer);
-              console.log(`[SmartRoute] Buffer criado com sucesso. Tamanho: ${buffer.byteLength} bytes`);
-              
-              // Extraindo a duração real usando music-metadata
-              try {
-                const metadata = await mm.parseBuffer(buffer, res.headers.get('content-type') || undefined);
-                if (metadata.format.duration) {
-                  realDurationMs = Math.round(metadata.format.duration * 1000);
-                  console.log(`[SmartRoute] Duração real extraída: ${realDurationMs} ms`);
-                }
-              } catch (metaErr) {
-                console.log(`[SmartRoute] Aviso: Falha ao extrair duração real da mídia:`, metaErr);
-              }
-
-              let ext = 'bin';
-              try {
-                const urlPath = new URL(action.url!).pathname;
-                const parts = urlPath.split('.');
-                if (parts.length > 1) ext = parts.pop() || 'bin';
-              } catch(e) {}
-              const finalFilename = action.filename || `media.${ext}`;
-              
-              // Solução Definitiva para Next.js:
-              // Em vez de passar CustomFile/Buffer que o GramJS rejeita pelo conflito CJS/ESM,
-              // Salvamos num arquivo temporário ultra-rápido com UUID para evitar colisão em concorrência extrema
-              const uniqueId = crypto.randomUUID();
-              const tempPath = path.join(os.tmpdir(), `${uniqueId}_${finalFilename}`);
-              fs.writeFileSync(tempPath, buffer);
-              console.log(`[SmartRoute] Arquivo temporário criado em: ${tempPath}`);
-              
-              fileData = tempPath; // Passando a string (caminho), o GramJS acerta 100%
-            } else {
-              console.error(`[SmartRoute] Falha ao baixar mídia de ${action.url!}: ${res.status} ${res.statusText}`);
-            }
-          } catch (fetchErr) {
-            console.error("[SmartRoute] Exceção ao baixar buffer da mídia, caindo para URL direta:", fetchErr);
-          }
-        } else {
-          console.log(`[SmartRoute] Download bypassado para ${action.type}. Enviando URL diretamente.`);
-        }
-
-        // Agora que temos a duração (se aplicável), executamos a simulação de ação visual (ex: gravando áudio)
+          // Agora que temos a duração (se aplicável), executamos a simulação de ação visual (ex: gravando áudio)
           await simulateFileAction(client, instanceId, chatId, simAction, realDurationMs);
 
           console.log(`[SmartRoute] Enviando mídia para o Telegram...`);
@@ -196,26 +214,32 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
           });
           console.log(`[SmartRoute] Mídia enviada com sucesso. Msg ID: ${msg.id}`);
           messageIds.push(msg.id);
+          
+          if (settings?.mediaCacheEnabled && !action.cachedMedia) {
+             await saveMediaToCache(instanceId, action.url!, msg, realDurationMs);
+          }
         } catch (uploadErr) {
           console.error(`[SmartRoute] Erro fatal ao enviar mídia:`, uploadErr);
           throw uploadErr; // Propaga para o catch da rota principal
         } finally {
           client.invoke = originalInvoke;
-          // Limpando o arquivo temporário do servidor para não gastar SSD
-          if (typeof fileData === 'string' && fileData.includes(os.tmpdir())) {
-            try {
-              if (fs.existsSync(fileData)) {
-                fs.unlinkSync(fileData);
-                console.log(`[SmartRoute] Arquivo temporário excluído: ${fileData}`);
-              }
-            } catch (e) {
-              console.error(`[SmartRoute] Falha ao excluir temp file: ${fileData}`, e);
-            }
-          }
         }
       }
 
       firstSent = true;
+    }
+    } finally {
+      // ==========================================
+      // STAGE 3: LIMPEZA DOS TEMPORÁRIOS
+      // ==========================================
+      for (const action of actions) {
+        if (action.prefetchedPath && fs.existsSync(action.prefetchedPath)) {
+          try {
+            fs.unlinkSync(action.prefetchedPath);
+            console.log(`[SmartRoute] Arquivo temporário limpo: ${action.prefetchedPath}`);
+          } catch (e) {}
+        }
+      }
     }
 
     const resData = { success: true, messageIds };

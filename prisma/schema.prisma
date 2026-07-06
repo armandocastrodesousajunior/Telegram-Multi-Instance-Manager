@@ -20,6 +20,7 @@ model Instance {
   audits      ConnectionAudit[]
   apiLogs     ApiLog[]
   webhookLogs WebhookLog[]
+  mediaCache  MediaCache[]
 }
 
 model InstanceSettings {
@@ -57,6 +58,25 @@ model InstanceSettings {
 
   // Message splitting
   splitMessagesEnabled Boolean @default(true)
+  mediaCacheEnabled    Boolean @default(true)
+}
+
+model MediaCache {
+  id             String   @id @default(uuid())
+  instanceId     String
+  url            String
+  mediaType      String   
+  mediaId        String   
+  accessHash     String   
+  fileReference  String   
+  durationMs     Int      @default(0)
+  createdAt      DateTime @default(now())
+  expiresAt      DateTime
+
+  instance       Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  
+  @@unique([instanceId, url])
+  @@index([expiresAt])
 }
 
 model Webhook {

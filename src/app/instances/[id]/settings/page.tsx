@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { apiClient } from "@/lib/api-client";
-import { Save } from "lucide-react";
+import { Save, Trash2 } from "lucide-react";
 
 interface InstanceSettings {
   typingEnabled: boolean;
@@ -23,6 +23,7 @@ interface InstanceSettings {
   documentFixedSeconds: number | string;
   markViewOnceAsRead: boolean;
   splitMessagesEnabled: boolean;
+  mediaCacheEnabled: boolean;
 }
 
 const Section = ({ title, children }: { title: string, children: React.ReactNode }) => (
@@ -112,6 +113,7 @@ export default function InstanceSettingsPage() {
     documentFixedSeconds: 2,
     markViewOnceAsRead: true,
     splitMessagesEnabled: true,
+    mediaCacheEnabled: true,
   });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -147,6 +149,7 @@ export default function InstanceSettingsPage() {
         documentFixedSeconds: data.documentFixedSeconds,
         markViewOnceAsRead: data.markViewOnceAsRead ?? true,
         splitMessagesEnabled: data.splitMessagesEnabled ?? true,
+        mediaCacheEnabled: data.mediaCacheEnabled ?? true,
       });
     } catch (error: any) {
       console.error(error);
@@ -202,6 +205,7 @@ export default function InstanceSettingsPage() {
       documentFixedSeconds: Number(settings.documentFixedSeconds) || 0,
       markViewOnceAsRead: settings.markViewOnceAsRead,
       splitMessagesEnabled: settings.splitMessagesEnabled,
+      mediaCacheEnabled: settings.mediaCacheEnabled,
     };
 
     try {
@@ -213,6 +217,17 @@ export default function InstanceSettingsPage() {
       alert("Failed to save settings");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleResetCache = async () => {
+    if (!confirm("Are you sure you want to clear the media cache? This will force the server to download all media again on the next send.")) return;
+    try {
+      const res = await apiClient.delete(`/api/instances/${id}/cache`);
+      alert(`Cache cleared successfully! (${(res as any).count} items deleted)`);
+    } catch (error) {
+      console.error(error);
+      alert("Failed to clear cache");
     }
   };
 
@@ -373,6 +388,20 @@ export default function InstanceSettingsPage() {
             </Section>
 
             <Section title="Media & Downloads">
+              <div style={{ gridColumn: "1 / -1", marginBottom: "8px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ flex: 1 }}>
+                  <Toggle 
+                    label="Cache em Nuvem (Zero-Upload)" 
+                    description="Salva o ID das mídias enviadas no banco de dados por 24h. Envia instantaneamente sem precisar baixar ou fazer upload novamente para o Telegram."
+                    checked={settings.mediaCacheEnabled} 
+                    onChange={(v: boolean) => setSettings({ ...settings, mediaCacheEnabled: v })} 
+                  />
+                </div>
+                <button type="button" onClick={handleResetCache} className="btn-secondary" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <Trash2 size={16} />
+                  Reset Cache
+                </button>
+              </div>
               <Toggle 
                 label="Auto-Read 'View Once' Media" 
                 description="When downloading 'View Once' photos/videos/voice via the webhook media link, automatically mark them as opened/viewed in Telegram so they are destroyed."
