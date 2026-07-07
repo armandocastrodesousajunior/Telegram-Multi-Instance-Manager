@@ -24,6 +24,7 @@ interface InstanceSettings {
   markViewOnceAsRead: boolean;
   splitMessagesEnabled: boolean;
   mediaCacheEnabled: boolean;
+  viewOnceTtlSeconds: number;
 }
 
 const Section = ({ title, children }: { title: string, children: React.ReactNode }) => (
@@ -114,6 +115,7 @@ export default function InstanceSettingsPage() {
     markViewOnceAsRead: true,
     splitMessagesEnabled: true,
     mediaCacheEnabled: true,
+    viewOnceTtlSeconds: 2147483647,
   });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -150,6 +152,7 @@ export default function InstanceSettingsPage() {
         markViewOnceAsRead: data.markViewOnceAsRead ?? true,
         splitMessagesEnabled: data.splitMessagesEnabled ?? true,
         mediaCacheEnabled: data.mediaCacheEnabled ?? true,
+        viewOnceTtlSeconds: data.viewOnceTtlSeconds ?? 2147483647,
       });
     } catch (error: any) {
       console.error(error);
@@ -206,6 +209,7 @@ export default function InstanceSettingsPage() {
       markViewOnceAsRead: settings.markViewOnceAsRead,
       splitMessagesEnabled: settings.splitMessagesEnabled,
       mediaCacheEnabled: settings.mediaCacheEnabled,
+      viewOnceTtlSeconds: Number(settings.viewOnceTtlSeconds),
     };
 
     try {
@@ -408,6 +412,25 @@ export default function InstanceSettingsPage() {
                 checked={settings.markViewOnceAsRead} 
                 onChange={(v: boolean) => setSettings({ ...settings, markViewOnceAsRead: v })} 
               />
+              <div style={{ gridColumn: "1 / -1", marginTop: "8px" }}>
+                <label style={{ display: "block", fontSize: "13px", fontWeight: 500, marginBottom: "8px", color: "var(--text-secondary)" }}>
+                  Duração da Mídia de Visualização Única (View Once)
+                </label>
+                <select 
+                  className="input-field" 
+                  value={settings.viewOnceTtlSeconds} 
+                  onChange={(e) => setSettings({ ...settings, viewOnceTtlSeconds: Number(e.target.value) })}
+                >
+                  <option value={2147483647}>Padrão: Destruir ao Fechar (Infinito)</option>
+                  <option value={30}>30 Segundos</option>
+                  <option value={60}>60 Segundos (1 Minuto)</option>
+                  <option value={15}>15 Segundos</option>
+                  <option value={5}>5 Segundos</option>
+                </select>
+                <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "4px" }}>
+                  Define o comportamento ao enviar um arquivo com `viewOnce: true`. O padrão destrói o arquivo assim que o usuário fecha a tela. Usando tempo fixo (ex: 30s), o vídeo começa uma contagem regressiva de 30 segundos após ser assistido até o fim e fechado, permitindo que o usuário assista novamente nesse meio tempo.
+                </div>
+              </div>
             </Section>
 
             <div style={{ marginTop: "32px", display: "flex", justifyContent: "flex-end" }}>

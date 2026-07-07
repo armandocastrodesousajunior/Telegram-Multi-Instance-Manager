@@ -24,18 +24,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     const client = await telegramManager.getClient(instanceId);
     await simulateFileAction(client, instanceId, chatId, 'video');
 
+    const settings = await prisma.instanceSettings.findUnique({ where: { instanceId } });
+
     // Intercept API call to inject viewOnce if requested
     const originalInvoke = client.invoke.bind(client);
     if (viewOnce) {
       client.invoke = async (req: any) => {
         if (req.className === 'messages.SendMedia' && req.media) {
-          req.media.ttlSeconds = 2147483647; // Telegram's standard for infinite view-once
+          req.media.ttlSeconds = settings?.viewOnceTtlSeconds ?? 2147483647;
         }
         return await originalInvoke(req);
       };
     }
-
-    const settings = await prisma.instanceSettings.findUnique({ where: { instanceId } });
     
     let fileData: any = url;
     let tempPath: string | null = null;

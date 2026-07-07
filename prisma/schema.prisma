@@ -55,6 +55,7 @@ model InstanceSettings {
 
   // View once media
   markViewOnceAsRead Boolean @default(true)
+  viewOnceTtlSeconds Int     @default(2147483647)
 
   // Message splitting
   splitMessagesEnabled Boolean @default(true)

@@ -188,7 +188,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
         if (isViewOnce) {
           client.invoke = async (req: any) => {
             if (req.className === 'messages.SendMedia' && req.media) {
-              req.media.ttlSeconds = 2147483647;
+              req.media.ttlSeconds = settings?.viewOnceTtlSeconds ?? 2147483647;
             }
             return await originalInvoke(req);
           };
