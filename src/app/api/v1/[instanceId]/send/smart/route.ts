@@ -203,15 +203,37 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
           await simulateFileAction(client, instanceId, chatId, simAction, realDurationMs);
 
           console.log(`[SmartRoute] Enviando mídia para o Telegram...`);
-          const msg = await client.sendFile(chatId, {
-            file: fileData,
-            caption: action.caption || '',
-            forceDocument: isDoc,
-            voiceNote: isVoice,
-            videoNote: false,
-            replyTo: replyTo,
-            parseMode: parseMode || undefined
-          });
+          let msg: any;
+          try {
+            msg = await client.sendFile(chatId, {
+              file: fileData,
+              caption: action.caption || '',
+              forceDocument: isDoc,
+              voiceNote: isVoice,
+              videoNote: false,
+              replyTo: replyTo,
+              parseMode: parseMode || undefined
+            });
+          } catch (uploadErr: any) {
+            if (uploadErr.message?.includes('FILE_REFERENCE_EXPIRED') && action.cachedMedia) {
+              console.log(`[SmartRoute] Aviso: Cache expirado para ${action.url}. Deletando do banco e tentando novamente com a URL original...`);
+              await import('@/lib/db').then(({ prisma }) => prisma.mediaCache.deleteMany({ where: { instanceId, url: action.url! } }));
+              action.cachedMedia = null;
+              fileData = action.prefetchedPath || action.url!;
+              msg = await client.sendFile(chatId, {
+                file: fileData,
+                caption: action.caption || '',
+                forceDocument: isDoc,
+                voiceNote: isVoice,
+                videoNote: false,
+                replyTo: replyTo,
+                parseMode: parseMode || undefined
+              });
+            } else {
+              throw uploadErr;
+            }
+          }
+          
           console.log(`[SmartRoute] Mídia enviada com sucesso. Msg ID: ${msg.id}`);
           messageIds.push(msg.id);
           

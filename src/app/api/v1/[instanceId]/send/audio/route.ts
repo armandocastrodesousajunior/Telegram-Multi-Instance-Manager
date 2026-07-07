@@ -32,11 +32,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
       }
     }
 
-    const message = await client.sendFile(chatId, {
-      file: fileData,
-      caption: caption || '',
-      replyTo: replyToMsgId
-    });
+    let message: any;
+    try {
+      message = await client.sendFile(chatId, {
+        file: fileData,
+        caption: caption || '',
+        replyTo: replyToMsgId
+      });
+    } catch (uploadErr: any) {
+      if (uploadErr.message?.includes('FILE_REFERENCE_EXPIRED') && cachedMedia) {
+        console.log(`[AudioRoute] Cache expirado para ${url}. Tentando novamente com URL original...`);
+        await prisma.mediaCache.deleteMany({ where: { instanceId, url } });
+        cachedMedia = null;
+        fileData = url;
+        message = await client.sendFile(chatId, {
+          file: fileData,
+          caption: caption || '',
+          replyTo: replyToMsgId
+        });
+      } else {
+        throw uploadErr;
+      }
+    }
 
     if (settings?.mediaCacheEnabled && !cachedMedia) {
       await saveMediaToCache(instanceId, url, message, 0);

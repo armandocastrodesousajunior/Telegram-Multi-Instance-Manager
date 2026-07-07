@@ -72,15 +72,33 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
       }
     }
 
-    let message;
+    let message: any;
     try {
-      message = await client.sendFile(chatId, {
-        file: fileData,
-        caption: caption || '',
-        replyTo: replyToMsgId,
-        parseMode: parseMode || undefined,
-        videoNote: false
-      });
+      try {
+        message = await client.sendFile(chatId, {
+          file: fileData,
+          caption: caption || '',
+          replyTo: replyToMsgId,
+          parseMode: parseMode || undefined,
+          videoNote: false
+        });
+      } catch (uploadErr: any) {
+        if (uploadErr.message?.includes('FILE_REFERENCE_EXPIRED') && cachedMedia) {
+          console.log(`[VideoRoute] Cache expirado para ${url}. Tentando novamente com URL original...`);
+          await prisma.mediaCache.deleteMany({ where: { instanceId, url } });
+          cachedMedia = null;
+          fileData = tempPath && fs.existsSync(tempPath) ? tempPath : url;
+          message = await client.sendFile(chatId, {
+            file: fileData,
+            caption: caption || '',
+            replyTo: replyToMsgId,
+            parseMode: parseMode || undefined,
+            videoNote: false
+          });
+        } else {
+          throw uploadErr;
+        }
+      }
       
       if (settings?.mediaCacheEnabled && !cachedMedia) {
         await saveMediaToCache(instanceId, url, message, 0);
