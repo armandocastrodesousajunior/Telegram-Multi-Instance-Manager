@@ -8,6 +8,8 @@ import path from 'path';
 import os from 'os';
 import crypto from 'crypto';
 import { prisma } from '@/lib/db';
+import { getOrFetchEntity } from '@/lib/telegram/utils';
+import { sendViewOnceFile } from '@/lib/telegram/viewOnce';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ instanceId: string }> }) {
   if (!checkAuth(req)) return unauthorizedResponse();
@@ -22,21 +24,52 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     }
 
     const client = await telegramManager.getClient(instanceId);
-    await simulateFileAction(client, instanceId, chatId, 'video');
+    const resolvedChatId = await getOrFetchEntity(client, chatId);
 
     const settings = await prisma.instanceSettings.findUnique({ where: { instanceId } });
 
-    // Intercept API call to inject viewOnce if requested
-    const originalInvoke = client.invoke.bind(client);
+    // ── View Once ──────────────────────────────────────────────────────────────
+    // Usa API de baixo nível (sem monkey-patching de client.invoke) para evitar
+    // race condition entre requisições concorrentes.
     if (viewOnce) {
-      client.invoke = async (req: any) => {
-        if (req.className === 'messages.SendMedia' && req.media) {
-          req.media.ttlSeconds = settings?.viewOnceTtlSeconds ?? 2147483647;
+      await simulateFileAction(client, instanceId, resolvedChatId, 'video');
+
+      let tempPath: string | null = null;
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Falha ao baixar vídeo: HTTP ${res.status}`);
+        const arrayBuffer = await res.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        const uniqueId = crypto.randomUUID();
+        let ext = 'mp4';
+        try {
+          const parts = new URL(url).pathname.split('.');
+          if (parts.length > 1) ext = parts.pop() || 'mp4';
+        } catch (e) {}
+        tempPath = path.join(os.tmpdir(), `${uniqueId}_vo_video.${ext}`);
+        fs.writeFileSync(tempPath, buffer);
+
+        const ttlSeconds = settings?.viewOnceTtlSeconds ?? 2147483647;
+        const message = await sendViewOnceFile(client, resolvedChatId, {
+          tempPath,
+          mediaType: 'video',
+          caption: caption || '',
+          replyToMsgId,
+          ttlSeconds,
+          parseMode,
+        });
+
+        return NextResponse.json({ success: true, messageId: message.id });
+      } finally {
+        if (tempPath && fs.existsSync(tempPath)) {
+          try { fs.unlinkSync(tempPath); } catch (e) {}
         }
-        return await originalInvoke(req);
-      };
+      }
     }
-    
+
+    // ── Envio Normal (sem view once) ───────────────────────────────────────────
+    await simulateFileAction(client, instanceId, resolvedChatId, 'video');
+
     let fileData: any = url;
     let tempPath: string | null = null;
     let cachedMedia = null;
@@ -49,38 +82,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
       }
     }
 
-    if (viewOnce && !cachedMedia) {
-      try {
-        const res = await fetch(url);
-        if (res.ok) {
-          const arrayBuffer = await res.arrayBuffer();
-          const buffer = Buffer.from(arrayBuffer);
-          const uniqueId = crypto.randomUUID();
-          let ext = 'mp4';
-          try {
-            const urlPath = new URL(url).pathname;
-            const parts = urlPath.split('.');
-            if (parts.length > 1) ext = parts.pop() || 'mp4';
-          } catch(e) {}
-          
-          tempPath = path.join(os.tmpdir(), `${uniqueId}_video.${ext}`);
-          fs.writeFileSync(tempPath, buffer);
-          fileData = tempPath; // Passa o caminho físico para forçar o UploadedDocument
-        }
-      } catch (fetchErr) {
-        console.error("Falha ao baixar vídeo para viewOnce, caindo para URL direta:", fetchErr);
-      }
-    }
-
     let message: any;
     try {
       try {
-        message = await client.sendFile(chatId, {
+        message = await client.sendFile(resolvedChatId, {
           file: fileData,
           caption: caption || '',
           replyTo: replyToMsgId,
           parseMode: parseMode || undefined,
-          videoNote: false
+          videoNote: false,
         });
       } catch (uploadErr: any) {
         if (uploadErr.message?.includes('FILE_REFERENCE_EXPIRED') && cachedMedia) {
@@ -88,23 +98,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
           await prisma.mediaCache.deleteMany({ where: { instanceId, url } });
           cachedMedia = null;
           fileData = tempPath && fs.existsSync(tempPath) ? tempPath : url;
-          message = await client.sendFile(chatId, {
+          message = await client.sendFile(resolvedChatId, {
             file: fileData,
             caption: caption || '',
             replyTo: replyToMsgId,
             parseMode: parseMode || undefined,
-            videoNote: false
+            videoNote: false,
           });
         } else {
           throw uploadErr;
         }
       }
-      
+
       if (settings?.mediaCacheEnabled && !cachedMedia) {
         await saveMediaToCache(instanceId, url, message, 0);
       }
     } finally {
-      client.invoke = originalInvoke;
       if (tempPath && fs.existsSync(tempPath)) {
         try { fs.unlinkSync(tempPath); } catch (e) {}
       }

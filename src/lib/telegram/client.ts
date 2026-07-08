@@ -30,8 +30,9 @@ export class TelegramClientManager {
     });
     client.setLogLevel(LogLevel.ERROR);
 
-    client.addEventHandler((event) => handleNewMessage(instanceId, event), new NewMessage({}));
-    client.addEventHandler((event) => handleEditedMessage(instanceId, event), new EditedMessage({}));
+    // Passar o client para os handlers para que possam popular o cache de entidades
+    client.addEventHandler((event) => handleNewMessage(instanceId, event, client), new NewMessage({}));
+    client.addEventHandler((event) => handleEditedMessage(instanceId, event, client), new EditedMessage({}));
     client.addEventHandler((event) => handleRawEvent(instanceId, event), new Raw({}));
 
     try {

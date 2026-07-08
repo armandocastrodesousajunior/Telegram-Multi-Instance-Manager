@@ -3,6 +3,7 @@ import { checkAuth, unauthorizedResponse } from '@/lib/auth';
 import { telegramManager } from '@/lib/telegram/client';
 import { simulateFileAction } from '@/lib/telegram/actions';
 import { getCachedMedia, saveMediaToCache } from '@/lib/telegram/mediaCache';
+import { getOrFetchEntity } from '@/lib/telegram/utils';
 import { prisma } from '@/lib/db';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ instanceId: string }> }) {
@@ -17,7 +18,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     }
 
     const client = await telegramManager.getClient(instanceId);
-    await simulateFileAction(client, instanceId, chatId, 'document');
+    const resolvedChatId = await getOrFetchEntity(client, chatId);
+    await simulateFileAction(client, instanceId, resolvedChatId, 'document');
 
     const settings = await prisma.instanceSettings.findUnique({ where: { instanceId } });
     
@@ -34,7 +36,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
 
     let message: any;
     try {
-      message = await client.sendFile(chatId, {
+      message = await client.sendFile(resolvedChatId, {
         file: fileData,
         caption: caption || '',
         replyTo: replyToMsgId,
@@ -47,7 +49,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
         await prisma.mediaCache.deleteMany({ where: { instanceId, url } });
         cachedMedia = null;
         fileData = url;
-        message = await client.sendFile(chatId, {
+        message = await client.sendFile(resolvedChatId, {
           file: fileData,
           caption: caption || '',
           replyTo: replyToMsgId,

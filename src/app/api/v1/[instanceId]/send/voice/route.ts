@@ -3,25 +3,28 @@ import { checkAuth, unauthorizedResponse } from '@/lib/auth';
 import { telegramManager } from '@/lib/telegram/client';
 import { simulateFileAction } from '@/lib/telegram/actions';
 import { getCachedMedia, saveMediaToCache } from '@/lib/telegram/mediaCache';
+import { getOrFetchEntity } from '@/lib/telegram/utils';
 import { prisma } from '@/lib/db';
+import fs from 'fs';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ instanceId: string }> }) {
   if (!checkAuth(req)) return unauthorizedResponse();
 
   try {
     const { instanceId } = await params;
-    const { chatId, url, replyToMsgId } = await req.json();
+    const { chatId, url, replyToMsgId, parseMode, tempPath } = await req.json();
 
     if (!chatId || !url) {
       return NextResponse.json({ error: 'chatId and url are required' }, { status: 400 });
     }
 
     const client = await telegramManager.getClient(instanceId);
-    await simulateFileAction(client, instanceId, chatId, 'audio');
+    const resolvedChatId = await getOrFetchEntity(client, chatId);
+    await simulateFileAction(client, instanceId, resolvedChatId, 'audio');
 
     const settings = await prisma.instanceSettings.findUnique({ where: { instanceId } });
     
-    let fileData: any = url;
+    let fileData: any = tempPath && fs.existsSync(tempPath) ? tempPath : url;
     let cachedMedia = null;
 
     if (settings?.mediaCacheEnabled) {
@@ -34,18 +37,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
 
     let message: any;
     try {
-      message = await client.sendFile(chatId, {
+      message = await client.sendFile(resolvedChatId, {
         file: fileData,
+        voiceNote: true,
         replyTo: replyToMsgId,
-        voiceNote: true
+        parseMode: parseMode || undefined
       });
     } catch (uploadErr: any) {
       if (uploadErr.message?.includes('FILE_REFERENCE_EXPIRED') && cachedMedia) {
         console.log(`[VoiceRoute] Cache expirado para ${url}. Tentando novamente com URL original...`);
         await prisma.mediaCache.deleteMany({ where: { instanceId, url } });
         cachedMedia = null;
-        fileData = url;
-        message = await client.sendFile(chatId, {
+        fileData = tempPath && fs.existsSync(tempPath) ? tempPath : url;
+        message = await client.sendFile(resolvedChatId, {
           file: fileData,
           replyTo: replyToMsgId,
           voiceNote: true

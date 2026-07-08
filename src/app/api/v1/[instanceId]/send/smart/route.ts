@@ -11,6 +11,8 @@ import path from 'path';
 import os from 'os';
 import crypto from 'crypto';
 import { getCachedMedia, saveMediaToCache } from '@/lib/telegram/mediaCache';
+import { getOrFetchEntity } from '@/lib/telegram/utils';
+import { sendViewOnceFile } from '@/lib/telegram/viewOnce';
 
 interface SmartAction {
   type: string;
@@ -38,6 +40,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     }
 
     const client = await telegramManager.getClient(instanceId);
+    const resolvedChatId = await getOrFetchEntity(client, chatId);
     
     // Fetch instance settings to check for split messages option
     const settings = await prisma.instanceSettings.findUnique({
@@ -157,70 +160,99 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     // ==========================================
     // STAGE 2: EXECUÇÃO EM TEMPO REAL
     // ==========================================
+    // IMPORTANTE: Nenhum monkey-patching de client.invoke aqui.
+    // View-once é tratado via API de baixo nível (sendViewOnceFile) que
+    // não toca no invoke compartilhado, eliminando race conditions.
     try {
-      // Execute actions sequentially
-    for (let i = 0; i < actions.length; i++) {
-      const action = actions[i];
-      const replyTo = !firstSent ? replyToMsgId : undefined;
+      for (let i = 0; i < actions.length; i++) {
+        const action = actions[i];
+        const replyTo = !firstSent ? replyToMsgId : undefined;
 
-      if (action.type === 'text') {
-        await simulateTyping(client, instanceId, chatId, action.text!);
-        const msg = await client.sendMessage(chatId, {
-          message: action.text!,
-          replyTo: replyTo,
-          parseMode: parseMode || undefined
-        });
-        messageIds.push(msg.id);
-      } else {
-        const isPhoto = action.type.includes('image');
-        const isVideo = action.type.includes('video');
-        const isAudio = action.type.includes('audio');
-        const isVoice = action.type.includes('voice');
-        const isDoc = action.type.includes('document');
-        const isViewOnce = action.type.startsWith('view_once_');
+        if (action.type === 'text') {
+          await simulateTyping(client, instanceId, resolvedChatId, action.text!);
+          const msg = await client.sendMessage(resolvedChatId, {
+            message: action.text!,
+            replyTo: replyTo,
+            parseMode: parseMode || undefined
+          });
+          messageIds.push(msg.id);
 
-        let simAction: 'document' | 'photo' | 'video' | 'audio' = 'document';
-        if (isPhoto) simAction = 'photo';
-        else if (isVideo) simAction = 'video';
-        else if (isAudio || isVoice) simAction = 'audio';
+        } else {
+          const isPhoto  = action.type.includes('image');
+          const isVideo  = action.type.includes('video');
+          const isAudio  = action.type.includes('audio');
+          const isVoice  = action.type.includes('voice');
+          const isDoc    = action.type.includes('document');
 
-        const originalInvoke = client.invoke.bind(client);
-        if (isViewOnce) {
-          client.invoke = async (req: any) => {
-            if (req.className === 'messages.SendMedia' && req.media) {
-              req.media.ttlSeconds = settings?.viewOnceTtlSeconds ?? 2147483647;
+          // CORREÇÃO: isViewOnce é EXCLUSIVO para tipos view_once_*
+          // Tipos normais (image, video, audio, etc.) NUNCA são view-once
+          const isViewOnce = action.type === 'view_once_image' || action.type === 'view_once_video';
+
+          let simAction: 'document' | 'photo' | 'video' | 'audio' = 'document';
+          if (isPhoto) simAction = 'photo';
+          else if (isVideo) simAction = 'video';
+          else if (isAudio || isVoice) simAction = 'audio';
+
+          console.log(`[SmartRoute] Processando ação: type=${action.type} isViewOnce=${isViewOnce} url=${action.url}`);
+
+          await simulateFileAction(client, instanceId, resolvedChatId, simAction, action.prefetchedDuration || 0);
+
+          // ── View Once: usa API de baixo nível (sem tocar em client.invoke) ──
+          if (isViewOnce) {
+            // Precisa de arquivo local para o upload com ttlSeconds
+            let tempPath = action.prefetchedPath || null;
+            let ownedTemp = false;
+
+            if (!tempPath || !fs.existsSync(tempPath)) {
+              try {
+                console.log(`[SmartRoute] Baixando mídia view-once: ${action.url}`);
+                const res = await fetch(action.url!);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const buffer = Buffer.from(await res.arrayBuffer());
+                let ext = isPhoto ? 'jpg' : 'mp4';
+                try {
+                  const parts = new URL(action.url!).pathname.split('.');
+                  if (parts.length > 1) ext = parts.pop() || ext;
+                } catch(e) {}
+                const uniqueId = crypto.randomUUID();
+                tempPath = path.join(os.tmpdir(), `${uniqueId}_vo.${ext}`);
+                fs.writeFileSync(tempPath, buffer);
+                ownedTemp = true;
+                console.log(`[SmartRoute] Download concluído para view-once: ${tempPath}`);
+              } catch (dlErr) {
+                console.error(`[SmartRoute] Falha ao baixar view-once:`, dlErr);
+                throw dlErr;
+              }
             }
-            return await originalInvoke(req);
-          };
-        }
 
-        let fileData: any = action.cachedMedia || action.prefetchedPath || action.url!;
-        let realDurationMs = action.prefetchedDuration || 0;
+            try {
+              const ttlSeconds = settings?.viewOnceTtlSeconds ?? 2147483647;
+              console.log(`[SmartRoute] Enviando view-once com ttlSeconds=${ttlSeconds}...`);
+              const msg = await sendViewOnceFile(client, resolvedChatId, {
+                tempPath: tempPath!,
+                mediaType: isPhoto ? 'photo' : 'video',
+                caption: action.caption || '',
+                replyToMsgId: replyTo,
+                ttlSeconds,
+                parseMode,
+              });
+              console.log(`[SmartRoute] View-once enviado. Msg ID: ${msg.id}`);
+              messageIds.push(msg.id);
+            } finally {
+              // Limpa o temp gerado por nós (não pelo pre-fetch global)
+              if (ownedTemp && tempPath && fs.existsSync(tempPath)) {
+                try { fs.unlinkSync(tempPath); } catch (e) {}
+              }
+            }
 
-        try {
-          console.log(`[SmartRoute] Processando ação de mídia: type=${action.type}, url=${action.url}`);
-          // Agora que temos a duração (se aplicável), executamos a simulação de ação visual (ex: gravando áudio)
-          await simulateFileAction(client, instanceId, chatId, simAction, realDurationMs);
+          } else {
+            // ── Envio Normal: client.invoke nunca é tocado ──────────────────
+            let fileData: any = action.cachedMedia || action.prefetchedPath || action.url!;
 
-          console.log(`[SmartRoute] Enviando mídia para o Telegram...`);
-          let msg: any;
-          try {
-            msg = await client.sendFile(chatId, {
-              file: fileData,
-              caption: action.caption || '',
-              forceDocument: isDoc,
-              voiceNote: isVoice,
-              videoNote: false,
-              replyTo: replyTo,
-              parseMode: parseMode || undefined
-            });
-          } catch (uploadErr: any) {
-            if (uploadErr.message?.includes('FILE_REFERENCE_EXPIRED') && action.cachedMedia) {
-              console.log(`[SmartRoute] Aviso: Cache expirado para ${action.url}. Deletando do banco e tentando novamente com a URL original...`);
-              await import('@/lib/db').then(({ prisma }) => prisma.mediaCache.deleteMany({ where: { instanceId, url: action.url! } }));
-              action.cachedMedia = null;
-              fileData = action.prefetchedPath || action.url!;
-              msg = await client.sendFile(chatId, {
+            console.log(`[SmartRoute] Enviando mídia normal para o Telegram...`);
+            let msg: any;
+            try {
+              msg = await client.sendFile(resolvedChatId, {
                 file: fileData,
                 caption: action.caption || '',
                 forceDocument: isDoc,
@@ -229,27 +261,37 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
                 replyTo: replyTo,
                 parseMode: parseMode || undefined
               });
-            } else {
-              throw uploadErr;
+            } catch (uploadErr: any) {
+              if (uploadErr.message?.includes('FILE_REFERENCE_EXPIRED') && action.cachedMedia) {
+                console.log(`[SmartRoute] Cache expirado para ${action.url}. Tentando com URL original...`);
+                await import('@/lib/db').then(({ prisma }) => prisma.mediaCache.deleteMany({ where: { instanceId, url: action.url! } }));
+                action.cachedMedia = null;
+                fileData = action.prefetchedPath || action.url!;
+                msg = await client.sendFile(resolvedChatId, {
+                  file: fileData,
+                  caption: action.caption || '',
+                  forceDocument: isDoc,
+                  voiceNote: isVoice,
+                  videoNote: false,
+                  replyTo: replyTo,
+                  parseMode: parseMode || undefined
+                });
+              } else {
+                throw uploadErr;
+              }
+            }
+            
+            console.log(`[SmartRoute] Mídia normal enviada. Msg ID: ${msg.id}`);
+            messageIds.push(msg.id);
+            
+            if (settings?.mediaCacheEnabled && !action.cachedMedia) {
+              await saveMediaToCache(instanceId, action.url!, msg, action.prefetchedDuration || 0);
             }
           }
-          
-          console.log(`[SmartRoute] Mídia enviada com sucesso. Msg ID: ${msg.id}`);
-          messageIds.push(msg.id);
-          
-          if (settings?.mediaCacheEnabled && !action.cachedMedia) {
-             await saveMediaToCache(instanceId, action.url!, msg, realDurationMs);
-          }
-        } catch (uploadErr) {
-          console.error(`[SmartRoute] Erro fatal ao enviar mídia:`, uploadErr);
-          throw uploadErr; // Propaga para o catch da rota principal
-        } finally {
-          client.invoke = originalInvoke;
         }
-      }
 
-      firstSent = true;
-    }
+        firstSent = true;
+      }
     } finally {
       // ==========================================
       // STAGE 3: LIMPEZA DOS TEMPORÁRIOS

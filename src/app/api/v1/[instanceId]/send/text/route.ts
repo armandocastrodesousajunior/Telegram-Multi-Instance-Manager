@@ -4,6 +4,7 @@ import { telegramManager } from '@/lib/telegram/client';
 import { simulateTyping } from '@/lib/telegram/actions';
 import { logApiRequest } from '@/lib/logger';
 import { prisma } from '@/lib/db';
+import { getOrFetchEntity } from '@/lib/telegram/utils';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ instanceId: string }> }) {
   if (!checkAuth(req)) return unauthorizedResponse();
@@ -20,6 +21,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     }
 
     const client = await telegramManager.getClient(instanceId);
+    const resolvedChatId = await getOrFetchEntity(client, chatId);
     
     // Fetch instance settings to check for split messages option
     const settings = await prisma.instanceSettings.findUnique({
@@ -35,9 +37,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
       
       for (let i = 0; i < parts.length; i++) {
         const part = parts[i];
-        await simulateTyping(client, instanceId, chatId, part);
+        await simulateTyping(client, instanceId, resolvedChatId, part);
         
-        const message = await client.sendMessage(chatId, {
+        const message = await client.sendMessage(resolvedChatId, {
           message: part,
           replyTo: i === 0 ? replyToMsgId : undefined, // Reply only to the first part
           parseMode: parseMode || undefined
@@ -48,9 +50,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
       resData = { success: true, isSplit: true, messageIds };
     } else {
       // Normal behavior
-      await simulateTyping(client, instanceId, chatId, text);
+      await simulateTyping(client, instanceId, resolvedChatId, text);
 
-      const message = await client.sendMessage(chatId, {
+      const message = await client.sendMessage(resolvedChatId, {
         message: text,
         replyTo: replyToMsgId,
         parseMode: parseMode || undefined
