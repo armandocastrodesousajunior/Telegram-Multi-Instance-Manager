@@ -4,7 +4,14 @@ import { prisma } from '@/lib/db';
 import { telegramManager } from '@/lib/telegram/client';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  if (!checkAuth(req)) return unauthorizedResponse();
+  let authInstanceId = undefined;
+  try {
+    if (typeof params !== 'undefined') {
+      const p = await params;
+      authInstanceId = (p as any).instanceId || (p as any).id;
+    }
+  } catch(e) {}
+  if (!(await checkAuth(req, authInstanceId))) return unauthorizedResponse();
 
   try {
     const { id } = await params;
@@ -13,7 +20,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
 
-    await telegramManager.removeClient(id);
+    if (instance.type === 'BOT') {
+      if (instance.botToken) {
+        try {
+          await fetch(`https://api.telegram.org/bot${instance.botToken}/deleteWebhook`, { method: 'POST' });
+        } catch (e) {
+          console.error('[Disconnect] Failed to delete bot webhook', e);
+        }
+      }
+    } else {
+      await telegramManager.removeClient(id);
+    }
 
     await prisma.instance.update({
       where: { id },

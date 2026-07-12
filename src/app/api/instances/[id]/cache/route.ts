@@ -3,7 +3,14 @@ import { checkAuth, unauthorizedResponse } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  if (!checkAuth(req)) return unauthorizedResponse();
+  let authInstanceId = undefined;
+  try {
+    if (typeof params !== 'undefined') {
+      const p = await params;
+      authInstanceId = (p as any).instanceId || (p as any).id;
+    }
+  } catch(e) {}
+  if (!(await checkAuth(req, authInstanceId))) return unauthorizedResponse();
 
   try {
     const { id } = await params;

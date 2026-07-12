@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { checkAuth, unauthorizedResponse } from '@/lib/auth';
-import { telegramManager } from '@/lib/telegram/client';
-import { simulateFileAction } from '@/lib/telegram/actions';
+import { ProviderFactory } from '@/lib/telegram/providers/ProviderFactory';
 import { getCachedMedia, saveMediaToCache } from '@/lib/telegram/mediaCache';
 import fs from 'fs';
 import path from 'path';
@@ -9,10 +8,16 @@ import os from 'os';
 import crypto from 'crypto';
 import { prisma } from '@/lib/db';
 import { getOrFetchEntity } from '@/lib/telegram/utils';
-import { sendViewOnceFile } from '@/lib/telegram/viewOnce';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ instanceId: string }> }) {
-  if (!checkAuth(req)) return unauthorizedResponse();
+  let authInstanceId = undefined;
+  try {
+    if (typeof params !== 'undefined') {
+      const p = await params;
+      authInstanceId = (p as any).instanceId || (p as any).id;
+    }
+  } catch(e) {}
+  if (!(await checkAuth(req, authInstanceId))) return unauthorizedResponse();
 
   try {
     const { instanceId } = await params;
@@ -23,16 +28,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
       return NextResponse.json({ error: 'chatId and url are required' }, { status: 400 });
     }
 
-    const client = await telegramManager.getClient(instanceId);
-    const resolvedChatId = await getOrFetchEntity(client, chatId);
-
+    const instance = await prisma.instance.findUnique({ where: { id: instanceId } });
+    if (!instance) return NextResponse.json({ error: 'Instance not found' }, { status: 404 });
+    const provider = await ProviderFactory.getProvider(instance);
     const settings = await prisma.instanceSettings.findUnique({ where: { instanceId } });
 
     // ── View Once ──────────────────────────────────────────────────────────────
     // Usa API de baixo nível (sem monkey-patching de client.invoke) para evitar
     // race condition entre requisições concorrentes.
     if (viewOnce) {
-      await simulateFileAction(client, instanceId, resolvedChatId, 'photo');
+      await provider.simulateFileAction(chatId, 'photo');
 
       let tempPath: string | null = null;
       try {
@@ -50,9 +55,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
         fs.writeFileSync(tempPath, buffer);
 
         const ttlSeconds = settings?.viewOnceTtlSeconds ?? 2147483647;
-        const message = await sendViewOnceFile(client, resolvedChatId, {
-          tempPath,
-          mediaType: 'photo',
+        const message = await provider.sendViewOnceFile(chatId, tempPath, 'photo', {
           caption: caption || '',
           replyToMsgId,
           ttlSeconds,
@@ -68,7 +71,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     }
 
     // ── Envio Normal (sem view once) ───────────────────────────────────────────
-    await simulateFileAction(client, instanceId, resolvedChatId, 'photo');
+    await provider.simulateFileAction(chatId, 'photo');
 
     let fileData: any = url;
     let tempPath: string | null = null;
@@ -85,10 +88,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     let message: any;
     try {
       try {
-        message = await client.sendFile(resolvedChatId, {
-          file: fileData,
+        message = await provider.sendFile(chatId, fileData, {
           caption: caption || '',
-          replyTo: replyToMsgId,
+          replyToMsgId: replyToMsgId,
           parseMode: parseMode || undefined,
         });
       } catch (uploadErr: any) {
@@ -97,10 +99,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
           await prisma.mediaCache.deleteMany({ where: { instanceId, url } });
           cachedMedia = null;
           fileData = tempPath && fs.existsSync(tempPath) ? tempPath : url;
-          message = await client.sendFile(resolvedChatId, {
-            file: fileData,
+          message = await provider.sendFile(chatId, fileData, {
             caption: caption || '',
-            replyTo: replyToMsgId,
+            replyToMsgId: replyToMsgId,
             parseMode: parseMode || undefined,
           });
         } else {
@@ -108,8 +109,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
         }
       }
 
-      if (settings?.mediaCacheEnabled && !cachedMedia) {
-        await saveMediaToCache(instanceId, url, message, 0);
+      if (settings?.mediaCacheEnabled && !cachedMedia && instance.type !== 'BOT') {
+        await saveMediaToCache(instanceId, url, message.nativeMessage, 0);
       }
     } finally {
       if (tempPath && fs.existsSync(tempPath)) {

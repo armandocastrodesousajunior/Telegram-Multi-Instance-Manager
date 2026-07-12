@@ -1,13 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { checkAuth, unauthorizedResponse } from '@/lib/auth';
-import { telegramManager } from '@/lib/telegram/client';
-import { simulateTyping } from '@/lib/telegram/actions';
+import { ProviderFactory } from '@/lib/telegram/providers/ProviderFactory';
 import { logApiRequest } from '@/lib/logger';
 import { prisma } from '@/lib/db';
 import { getOrFetchEntity } from '@/lib/telegram/utils';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ instanceId: string }> }) {
-  if (!checkAuth(req)) return unauthorizedResponse();
+  let authInstanceId = undefined;
+  try {
+    if (typeof params !== 'undefined') {
+      const p = await params;
+      authInstanceId = (p as any).instanceId || (p as any).id;
+    }
+  } catch(e) {}
+  if (!(await checkAuth(req, authInstanceId))) return unauthorizedResponse();
 
   try {
     const { instanceId } = await params;
@@ -20,8 +26,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
       return NextResponse.json(err, { status: 400 });
     }
 
-    const client = await telegramManager.getClient(instanceId);
-    const resolvedChatId = await getOrFetchEntity(client, chatId);
+    const instance = await prisma.instance.findUnique({ where: { id: instanceId } });
+    if (!instance) return NextResponse.json({ error: 'Instance not found' }, { status: 404 });
+    const provider = await ProviderFactory.getProvider(instance);
     
     // Fetch instance settings to check for split messages option
     const settings = await prisma.instanceSettings.findUnique({
@@ -37,11 +44,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
       
       for (let i = 0; i < parts.length; i++) {
         const part = parts[i];
-        await simulateTyping(client, instanceId, resolvedChatId, part);
+        await provider.simulateTyping(chatId);
         
-        const message = await client.sendMessage(resolvedChatId, {
-          message: part,
-          replyTo: i === 0 ? replyToMsgId : undefined, // Reply only to the first part
+        const message = await provider.sendMessage(chatId, part, {
+          replyToMsgId: i === 0 ? replyToMsgId : undefined, // Reply only to the first part
           parseMode: parseMode || undefined
         });
         messageIds.push(message.id);
@@ -50,11 +56,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
       resData = { success: true, isSplit: true, messageIds };
     } else {
       // Normal behavior
-      await simulateTyping(client, instanceId, resolvedChatId, text);
+      await provider.simulateTyping(chatId);
 
-      const message = await client.sendMessage(resolvedChatId, {
-        message: text,
-        replyTo: replyToMsgId,
+      const message = await provider.sendMessage(chatId, text, {
+        replyToMsgId: replyToMsgId,
         parseMode: parseMode || undefined
       });
 

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { apiClient } from "@/lib/api-client";
-import { Save, Trash2 } from "lucide-react";
+import { Save, Trash2, Eye, EyeOff, Copy, RefreshCw } from "lucide-react";
 
 interface InstanceSettings {
   typingEnabled: boolean;
@@ -25,6 +25,8 @@ interface InstanceSettings {
   splitMessagesEnabled: boolean;
   mediaCacheEnabled: boolean;
   viewOnceTtlSeconds: number;
+  botSelfDestructMode: string;
+  botSelfDestructTimer: number;
 }
 
 const Section = ({ title, children }: { title: string, children: React.ReactNode }) => (
@@ -116,9 +118,15 @@ export default function InstanceSettingsPage() {
     splitMessagesEnabled: true,
     mediaCacheEnabled: true,
     viewOnceTtlSeconds: 2147483647,
+    botSelfDestructMode: "AFTER_SEND",
+    botSelfDestructTimer: 60,
   });
+  const [instanceData, setInstanceData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [instanceToken, setInstanceToken] = useState("");
+  const [showToken, setShowToken] = useState(false);
+  const [revoking, setRevoking] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -132,7 +140,10 @@ export default function InstanceSettingsPage() {
   const fetchSettings = async () => {
     try {
       setLoading(true);
-      const data = await apiClient.get<InstanceSettings>(`/api/instances/${id}/settings`);
+      const [data, instanceData] = await Promise.all([
+        apiClient.get<InstanceSettings>(`/api/instances/${id}/settings`),
+        apiClient.get<any>(`/api/instances/${id}`)
+      ]);
       setSettings({
         typingEnabled: data.typingEnabled,
         typingUseDuration: data.typingUseDuration ?? true,
@@ -153,7 +164,11 @@ export default function InstanceSettingsPage() {
         splitMessagesEnabled: data.splitMessagesEnabled ?? true,
         mediaCacheEnabled: data.mediaCacheEnabled ?? true,
         viewOnceTtlSeconds: data.viewOnceTtlSeconds ?? 2147483647,
+        botSelfDestructMode: data.botSelfDestructMode ?? "AFTER_SEND",
+        botSelfDestructTimer: data.botSelfDestructTimer ?? 60,
       });
+      setInstanceData(instanceData);
+      setInstanceToken(instanceData.token || "");
     } catch (error: any) {
       console.error(error);
       alert(error.message || "Failed to load settings");
@@ -210,6 +225,8 @@ export default function InstanceSettingsPage() {
       splitMessagesEnabled: settings.splitMessagesEnabled,
       mediaCacheEnabled: settings.mediaCacheEnabled,
       viewOnceTtlSeconds: Number(settings.viewOnceTtlSeconds),
+      botSelfDestructMode: settings.botSelfDestructMode,
+      botSelfDestructTimer: Number(settings.botSelfDestructTimer) || 0,
     };
 
     try {
@@ -235,6 +252,26 @@ export default function InstanceSettingsPage() {
     }
   };
 
+  const handleCopyToken = () => {
+    navigator.clipboard.writeText(instanceToken);
+    alert('Token copiado!');
+  };
+
+  const handleRevokeToken = async () => {
+    if (!confirm('Tem certeza de que deseja revogar este token? Qualquer automação usando-o irá parar de funcionar imediatamente.')) return;
+    setRevoking(true);
+    try {
+      const res = await apiClient.post<any>(`/api/instances/${id}/token`);
+      setInstanceToken(res.token);
+      alert('Token revogado e gerado novamente com sucesso.');
+    } catch (err) {
+      console.error(err);
+      alert('Falha ao revogar token');
+    } finally {
+      setRevoking(false);
+    }
+  };
+
   return (
     <main className="main-content">
       <header className="page-header animate-fade-in">
@@ -251,6 +288,28 @@ export default function InstanceSettingsPage() {
         ) : (
           <form className="glass-panel animate-fade-in" style={{ maxWidth: "70%", margin: "0 auto" }} onSubmit={handleSave}>
             
+            <Section title="Token de Acesso da Instância">
+              <div style={{ gridColumn: "1 / -1", marginBottom: "8px" }}>
+                <p style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: "16px" }}>
+                  Este token permite enviar mensagens via API <b>apenas por esta instância</b>. Ao utilizá-lo no Header <code>Authorization: Bearer [token]</code>, as automações ganham acesso apenas às rotas desta instância, aumentando a segurança em relação ao token administrativo global.
+                </p>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "rgba(0,0,0,0.2)", padding: "12px", borderRadius: "8px", border: "1px solid var(--glass-border)" }}>
+                  <div style={{ flex: 1, fontFamily: "monospace", fontSize: "14px", letterSpacing: "1px" }}>
+                    {showToken ? instanceToken : "••••••••-••••-••••-••••-••••••••••••"}
+                  </div>
+                  <button type="button" className="btn-secondary" style={{ padding: "8px" }} onClick={() => setShowToken(!showToken)} title={showToken ? "Esconder" : "Mostrar"}>
+                    {showToken ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                  <button type="button" className="btn-secondary" style={{ padding: "8px" }} onClick={handleCopyToken} title="Copiar Token">
+                    <Copy size={16} />
+                  </button>
+                  <button type="button" className="btn-secondary" style={{ padding: "8px", color: "var(--danger-color)" }} onClick={handleRevokeToken} disabled={revoking} title="Revogar e Gerar Novo">
+                    <RefreshCw size={16} className={revoking ? "animate-spin" : ""} />
+                  </button>
+                </div>
+              </div>
+            </Section>
+
             <Section title="Text Messages (Typing Simulation)">
               <Toggle 
                 label="Simulate Typing" 
@@ -414,12 +473,14 @@ export default function InstanceSettingsPage() {
               />
               <div style={{ gridColumn: "1 / -1", marginTop: "8px" }}>
                 <label style={{ display: "block", fontSize: "13px", fontWeight: 500, marginBottom: "8px", color: "var(--text-secondary)" }}>
-                  Duração da Mídia de Visualização Única (View Once)
+                  Duração da Mídia de Visualização Única (View Once) [Somente GramJS/Native]
                 </label>
                 <select 
                   className="input-field" 
                   value={settings.viewOnceTtlSeconds} 
                   onChange={(e) => setSettings({ ...settings, viewOnceTtlSeconds: Number(e.target.value) })}
+                  disabled={instanceData?.type === 'BOT'}
+                  style={{ opacity: instanceData?.type === 'BOT' ? 0.5 : 1 }}
                 >
                   <option value={2147483647}>Padrão: Destruir ao Fechar (Infinito)</option>
                   <option value={30}>30 Segundos</option>
@@ -428,10 +489,49 @@ export default function InstanceSettingsPage() {
                   <option value={5}>5 Segundos</option>
                 </select>
                 <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "4px" }}>
-                  Define o comportamento ao enviar um arquivo com `viewOnce: true`. O padrão destrói o arquivo assim que o usuário fecha a tela. Usando tempo fixo (ex: 30s), o vídeo começa uma contagem regressiva de 30 segundos após ser assistido até o fim e fechado, permitindo que o usuário assista novamente nesse meio tempo.
+                  {instanceData?.type === 'BOT' 
+                    ? "Incompatível com Bot API. Use o painel abaixo de Auto-Destruição para Bots."
+                    : "Define o comportamento ao enviar um arquivo com `viewOnce: true`. O padrão destrói o arquivo assim que o usuário fecha a tela."}
                 </div>
               </div>
             </Section>
+
+            {instanceData?.type === 'BOT' && (
+              <Section title="Auto-Destruição para Bots (Fallback)">
+                <div style={{ gridColumn: "1 / -1", marginBottom: "8px" }}>
+                  <label style={{ display: "block", fontSize: "13px", fontWeight: 500, marginBottom: "8px", color: "var(--text-secondary)" }}>
+                    Gatilho de Destruição
+                  </label>
+                  <select 
+                    className="input-field" 
+                    value={settings.botSelfDestructMode} 
+                    onChange={(e) => setSettings({ ...settings, botSelfDestructMode: e.target.value })}
+                  >
+                    <option value="AFTER_SEND">Destruir depois do Envio</option>
+                    <option value="AFTER_REPLY">Destruir depois da Resposta do Usuário</option>
+                  </select>
+                  <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "4px" }}>
+                    Bots não suportam visualização única nativa. Se uma mídia for enviada como view once, esta regra será aplicada.
+                  </div>
+                </div>
+
+                <div style={{ gridColumn: "1 / -1", marginTop: "8px" }}>
+                  <NumberInput 
+                    label="Tempo de Espera (Timer)" 
+                    value={settings.botSelfDestructTimer} 
+                    onChange={(v: number) => setSettings({ ...settings, botSelfDestructTimer: v })} 
+                    suffix="sec"
+                    min={0}
+                    max={86400}
+                  />
+                  <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "4px" }}>
+                    {settings.botSelfDestructMode === 'AFTER_SEND' 
+                      ? "A mídia será destruída após esse tempo." 
+                      : "Após o usuário enviar a resposta, a mídia será destruída após esse tempo (use 0 para imediato)."}
+                  </div>
+                </div>
+              </Section>
+            )}
 
             <div style={{ marginTop: "32px", display: "flex", justifyContent: "flex-end" }}>
               <button type="submit" className="btn-primary" disabled={saving}>

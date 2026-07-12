@@ -17,6 +17,21 @@ interface TelegramProfile {
   totalChats?: number;
   unreadChats?: number;
   unreadMessages?: number;
+  
+  type?: 'USER' | 'BOT';
+  botType?: 'NORMAL' | 'BUSINESS';
+  botInfo?: {
+    id: string;
+    firstName: string;
+    username: string;
+    photo: string | null;
+  };
+  businessInfo?: {
+    id: string;
+    firstName: string;
+    username: string;
+    photo: string | null;
+  };
 }
 
 interface ConnectionAudit {
@@ -176,49 +191,94 @@ export default function ConnectionPage() {
         <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
           
           <div className="grid grid-cols-1" style={{ gap: "24px", gridTemplateColumns: "1fr 2fr" }}>
-            {/* Left: Profile Card */}
-            <div className="glass-panel" style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", padding: "32px 20px" }}>
-              {profile?.photo ? (
-                <img src={profile.photo} alt="Profile" style={{ width: "96px", height: "96px", borderRadius: "50%", objectFit: "cover", border: "3px solid rgba(255, 255, 255, 0.1)", marginBottom: "16px" }} />
-              ) : (
-                <div style={{ width: "96px", height: "96px", borderRadius: "50%", background: "rgba(16, 185, 129, 0.1)", display: "flex", alignItems: "center", justifyContent: "center", border: "3px solid rgba(16, 185, 129, 0.2)", marginBottom: "16px" }}>
-                  <UserCheck color="var(--success-color)" size={40} />
-                </div>
-              )}
-              <h2 style={{ fontSize: "20px", fontWeight: 600, marginBottom: "4px" }}>
-                {profile ? `${profile.firstName} ${profile.lastName}`.trim() : "Active Connection"}
-              </h2>
-              {profile?.username && (
-                <p style={{ color: "var(--accent-primary)", fontSize: "15px", marginBottom: "8px" }}>@{profile.username}</p>
-              )}
-              <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "var(--text-secondary)", fontSize: "14px", marginTop: "4px" }}>
-                <PhoneCall size={14} />
-                {profile?.phone ? `+${profile.phone}` : instance.phone || "Unknown Number"}
-              </div>
-            </div>
-
-            {/* Right: Metrics */}
-            <div className="grid grid-cols-2" style={{ gap: "24px" }}>
-              <div className="glass-panel" style={{ display: "flex", flexDirection: "column", justifyContent: "center" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px", color: "var(--text-secondary)" }}>
-                  <MessageCircle size={20} />
-                  <span style={{ fontSize: "15px", fontWeight: 500 }}>Total Dialogs</span>
-                </div>
-                <div style={{ fontSize: "36px", fontWeight: 700, color: "var(--text-primary)" }}>
-                  {profile?.totalChats !== undefined ? profile.totalChats : "-"}
-                </div>
-              </div>
+            {/* Profile Logic Handler */}
+            {(() => {
+              // Helper variables for rendering
+              const isBot = profile?.type === 'BOT';
+              const isBusiness = isBot && profile?.botType === 'BUSINESS';
               
-              <div className="glass-panel" style={{ display: "flex", flexDirection: "column", justifyContent: "center" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px", color: "var(--text-secondary)" }}>
-                  <BellRing size={20} />
-                  <span style={{ fontSize: "15px", fontWeight: 500 }}>Unread Messages</span>
-                </div>
-                <div style={{ fontSize: "36px", fontWeight: 700, color: "var(--error-color)" }}>
-                  {profile?.unreadMessages !== undefined ? profile.unreadMessages : "-"}
-                </div>
-              </div>
-            </div>
+              // Determine main profile data (Business User if business, Bot if normal bot, or native profile if USER)
+              const mainAvatar = isBusiness ? profile?.businessInfo?.photo : isBot ? profile?.botInfo?.photo : profile?.photo;
+              const mainName = isBusiness 
+                ? profile?.businessInfo?.firstName 
+                : isBot 
+                  ? profile?.botInfo?.firstName 
+                  : (profile ? `${profile.firstName} ${profile.lastName}`.trim() : "Active Connection");
+              
+              const mainUsername = isBusiness ? profile?.businessInfo?.username : isBot ? profile?.botInfo?.username : profile?.username;
+
+              return (
+                <>
+                  {/* Left: Profile Card */}
+                  <div className={`glass-panel ${isBot ? 'col-span-2' : ''}`} style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", padding: "32px 20px" }}>
+                    {mainAvatar ? (
+                      <img src={mainAvatar} alt="Profile" style={{ width: "96px", height: "96px", borderRadius: "50%", objectFit: "cover", border: "3px solid rgba(255, 255, 255, 0.1)", marginBottom: "16px" }} />
+                    ) : (
+                      <div style={{ width: "96px", height: "96px", borderRadius: "50%", background: "rgba(16, 185, 129, 0.1)", display: "flex", alignItems: "center", justifyContent: "center", border: "3px solid rgba(16, 185, 129, 0.2)", marginBottom: "16px" }}>
+                        <UserCheck color="var(--success-color)" size={40} />
+                      </div>
+                    )}
+                    
+                    <h2 style={{ fontSize: "20px", fontWeight: 600, marginBottom: "4px" }}>
+                      {mainName}
+                    </h2>
+                    
+                    {mainUsername && (
+                      <p style={{ color: "var(--accent-primary)", fontSize: "15px", marginBottom: "8px" }}>@{mainUsername}</p>
+                    )}
+                    
+                    {/* Only show phone if it's NOT a bot (since bots can't fetch phone numbers via Bot API) */}
+                    {!isBot && (
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "var(--text-secondary)", fontSize: "14px", marginTop: "4px" }}>
+                        <PhoneCall size={14} />
+                        {profile?.phone ? `+${profile.phone}` : instance.phone || "Unknown Number"}
+                      </div>
+                    )}
+
+                    {/* Bot Connection Label for Business Account */}
+                    {isBusiness && profile?.botInfo && (
+                      <div style={{ marginTop: "16px", padding: "8px 16px", background: "rgba(255,255,255,0.05)", borderRadius: "8px", display: "inline-flex", alignItems: "center", gap: "8px" }}>
+                        {profile.botInfo.photo ? (
+                          <img src={profile.botInfo.photo} alt="Bot Avatar" style={{ width: "24px", height: "24px", borderRadius: "50%", objectFit: "cover" }} />
+                        ) : (
+                          <div style={{ width: "24px", height: "24px", borderRadius: "50%", background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                             <Shield size={12} color="var(--text-secondary)" />
+                          </div>
+                        )}
+                        <span style={{ fontSize: "13px", color: "var(--text-secondary)" }}>
+                          Connected to Bot: <strong style={{ color: "var(--text-primary)" }}>@{profile.botInfo.username}</strong>
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Right: Metrics (ONLY show if NOT a bot, because bots don't have access to global chats) */}
+                  {!isBot && (
+                    <div className="grid grid-cols-2" style={{ gap: "24px" }}>
+                      <div className="glass-panel" style={{ display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px", color: "var(--text-secondary)" }}>
+                          <MessageCircle size={20} />
+                          <span style={{ fontSize: "15px", fontWeight: 500 }}>Total Dialogs</span>
+                        </div>
+                        <div style={{ fontSize: "36px", fontWeight: 700, color: "var(--text-primary)" }}>
+                          {profile?.totalChats !== undefined ? profile.totalChats : "-"}
+                        </div>
+                      </div>
+                      
+                      <div className="glass-panel" style={{ display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px", color: "var(--text-secondary)" }}>
+                          <BellRing size={20} />
+                          <span style={{ fontSize: "15px", fontWeight: 500 }}>Unread Messages</span>
+                        </div>
+                        <div style={{ fontSize: "36px", fontWeight: 700, color: "var(--error-color)" }}>
+                          {profile?.unreadMessages !== undefined ? profile.unreadMessages : "-"}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
 
           {/* Bottom: Audit Table */}
@@ -274,7 +334,35 @@ export default function ConnectionPage() {
               </div>
             )}
 
-            {authStep === "phone" ? (
+            {instance.type === 'BOT' ? (
+              <div style={{ textAlign: "center", padding: "20px" }}>
+                <Shield size={48} style={{ color: "var(--accent-primary)", margin: "0 auto 16px" }} />
+                <h3 style={{ fontSize: "18px", fontWeight: 600, marginBottom: "8px" }}>Telegram Bot</h3>
+                <p style={{ color: "var(--text-secondary)", marginBottom: "24px", fontSize: "14px" }}>
+                  This instance uses the Telegram Bot API. Click the button below to register the webhook and connect your bot.
+                </p>
+                <button 
+                  type="button" 
+                  className="btn-primary" 
+                  style={{ width: "100%" }}
+                  onClick={async () => {
+                    setIsSubmitting(true);
+                    setError("");
+                    try {
+                      await apiClient.post(`/api/instances/${id}/connect`);
+                      await fetchInstance();
+                    } catch (err: any) {
+                      setError(err.message || "Failed to connect bot");
+                    } finally {
+                      setIsSubmitting(false);
+                    }
+                  }}
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? "Connecting..." : "Connect Bot Webhook"}
+                </button>
+              </div>
+            ) : authStep === "phone" ? (
               <form onSubmit={handleSendCode}>
                 <div style={{ marginBottom: "20px" }}>
                   <label style={{ display: "block", marginBottom: "8px", fontSize: "14px", color: "var(--text-secondary)" }}>

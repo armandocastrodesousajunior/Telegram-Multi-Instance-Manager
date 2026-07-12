@@ -22,6 +22,7 @@ export default function InstanceWebhooksPage() {
   const id = params.id as string;
 
   const [webhooks, setWebhooks] = useState<Webhook[]>([]);
+  const [instanceData, setInstanceData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   
@@ -39,8 +40,18 @@ export default function InstanceWebhooksPage() {
       router.push("/login");
       return;
     }
+    fetchInstance();
     fetchWebhooks();
   }, [id, router]);
+
+  const fetchInstance = async () => {
+    try {
+      const data = await apiClient.get<any>(`/api/instances/${id}`);
+      setInstanceData(data);
+    } catch (error) {
+      console.error(error);
+    }
+  };
 
   const fetchWebhooks = async () => {
     try {
@@ -211,6 +222,7 @@ export default function InstanceWebhooksPage() {
                   <EventSelector 
                     selectedEvents={formEvents} 
                     onChange={(events) => setFormEvents(events)} 
+                    instanceType={instanceData?.type}
                   />
                 </div>
 

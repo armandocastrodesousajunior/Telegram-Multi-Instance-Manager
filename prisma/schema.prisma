@@ -7,20 +7,36 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum InstanceType {
+  USER
+  BOT
+}
+
+enum BotType {
+  NORMAL
+  BUSINESS
+}
+
 model Instance {
-  id        String    @id @default(uuid())
-  name      String
-  phone     String?
-  status    String    @default("disconnected")
-  session   String?
-  createdAt DateTime  @default(now())
+  id                   String       @id @default(uuid())
+  name                 String
+  type                 InstanceType @default(USER)
+  botType              BotType?
+  botToken             String?
+  businessConnectionId String?
+  phone                String?
+  status               String       @default("disconnected")
+  session              String?
+  token                String       @unique @default(uuid())
+  createdAt            DateTime     @default(now())
 
   settings    InstanceSettings?
   webhooks    Webhook[]
   audits      ConnectionAudit[]
   apiLogs     ApiLog[]
-  webhookLogs WebhookLog[]
-  mediaCache  MediaCache[]
+  webhookLogs         WebhookLog[]
+  mediaCache          MediaCache[]
+  pendingDestructions PendingDestruction[]
 }
 
 model InstanceSettings {
@@ -60,6 +76,10 @@ model InstanceSettings {
   // Message splitting
   splitMessagesEnabled Boolean @default(true)
   mediaCacheEnabled    Boolean @default(true)
+
+  // Bot Self-Destruct Fallback
+  botSelfDestructMode  String  @default("AFTER_SEND") // AFTER_SEND, AFTER_REPLY
+  botSelfDestructTimer Int     @default(60)
 }
 
 model MediaCache {
@@ -127,4 +147,16 @@ model WebhookLog {
   responseBody   String?  // JSON string
   success        Boolean
   createdAt      DateTime @default(now())
+}
+
+model PendingDestruction {
+  id         String   @id @default(uuid())
+  instanceId String
+  chatId     String
+  messageId  Int
+  createdAt  DateTime @default(now())
+
+  instance   Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@index([instanceId, chatId])
 }

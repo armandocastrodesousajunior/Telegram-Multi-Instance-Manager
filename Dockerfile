@@ -56,4 +56,4 @@ ENV PORT 3000
 ENV HOSTNAME "0.0.0.0"
 
 # Run Prisma migrations on startup, then start the server
-CMD ["sh", "-c", "npx --yes prisma@6 db push && node server.js"]
+CMD ["sh", "-c", "npx --yes prisma@6 db push --accept-data-loss && node server.js"]

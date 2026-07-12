@@ -6,6 +6,7 @@ import { Check } from "lucide-react";
 interface EventSelectorProps {
   selectedEvents: string[];
   onChange: (events: string[]) => void;
+  instanceType?: "USER" | "BOT";
 }
 
 const AVAILABLE_EVENTS = [
@@ -14,8 +15,9 @@ const AVAILABLE_EVENTS = [
   { id: "typing", label: "User Typing/Action", description: "Triggered when a user is typing, recording audio, or uploading media." },
 ];
 
-export function EventSelector({ selectedEvents, onChange }: EventSelectorProps) {
-  const toggleEvent = (id: string) => {
+export function EventSelector({ selectedEvents, onChange, instanceType = "USER" }: EventSelectorProps) {
+  const toggleEvent = (id: string, disabled: boolean) => {
+    if (disabled) return;
     if (selectedEvents.includes(id)) {
       onChange(selectedEvents.filter(e => e !== id));
     } else {
@@ -27,17 +29,20 @@ export function EventSelector({ selectedEvents, onChange }: EventSelectorProps) 
     <div className="grid grid-cols-2">
       {AVAILABLE_EVENTS.map(event => {
         const isSelected = selectedEvents.includes(event.id);
+        const disabled = event.id === "typing" && instanceType === "BOT";
         
         return (
           <div 
             key={event.id}
-            onClick={() => toggleEvent(event.id)}
+            onClick={() => toggleEvent(event.id, disabled)}
+            title={disabled ? "Not available for Bot instances" : ""}
             style={{
               padding: "16px",
               borderRadius: "12px",
               border: `1px solid ${isSelected ? "var(--accent-color)" : "var(--glass-border)"}`,
-              background: isSelected ? "rgba(99, 102, 241, 0.1)" : "rgba(0, 0, 0, 0.2)",
-              cursor: "pointer",
+              background: disabled ? "rgba(0, 0, 0, 0.4)" : isSelected ? "rgba(99, 102, 241, 0.1)" : "rgba(0, 0, 0, 0.2)",
+              cursor: disabled ? "not-allowed" : "pointer",
+              opacity: disabled ? 0.5 : 1,
               transition: "all 0.2s ease",
               position: "relative"
             }}

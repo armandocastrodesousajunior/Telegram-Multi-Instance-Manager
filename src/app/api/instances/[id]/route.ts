@@ -4,7 +4,14 @@ import { prisma } from '@/lib/db';
 import { telegramManager } from '@/lib/telegram/client';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  if (!checkAuth(req)) return unauthorizedResponse();
+  let authInstanceId = undefined;
+  try {
+    if (typeof params !== 'undefined') {
+      const p = await params;
+      authInstanceId = (p as any).instanceId || (p as any).id;
+    }
+  } catch(e) {}
+  if (!(await checkAuth(req, authInstanceId))) return unauthorizedResponse();
 
   try {
     const { id } = await params;
@@ -24,7 +31,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  if (!checkAuth(req)) return unauthorizedResponse();
+  let authInstanceId = undefined;
+  try {
+    if (typeof params !== 'undefined') {
+      const p = await params;
+      authInstanceId = (p as any).instanceId || (p as any).id;
+    }
+  } catch(e) {}
+  if (!(await checkAuth(req, authInstanceId))) return unauthorizedResponse();
 
   try {
     const { id } = await params;
@@ -39,6 +53,35 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     });
 
     return NextResponse.json({ success: true });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
+
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  let authInstanceId = undefined;
+  try {
+    if (typeof params !== 'undefined') {
+      const p = await params;
+      authInstanceId = (p as any).instanceId || (p as any).id;
+    }
+  } catch(e) {}
+  if (!(await checkAuth(req, authInstanceId))) return unauthorizedResponse();
+
+  try {
+    const { id } = await params;
+    const body = await req.json();
+    
+    if (!body.name) {
+      return NextResponse.json({ error: 'Name is required' }, { status: 400 });
+    }
+
+    const updated = await prisma.instance.update({
+      where: { id },
+      data: { name: body.name }
+    });
+
+    return NextResponse.json(updated);
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

@@ -10,6 +10,13 @@ export async function dispatchWebhook(instanceId: string, eventName: string, pay
       },
     });
 
+    const instanceObj = await prisma.instance.findUnique({
+      where: { id: instanceId },
+      select: { token: true }
+    });
+
+    const endpoint = process.env.PUBLIC_URL || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+
     for (const webhook of webhooks) {
       let events: string[] = [];
       try {
@@ -28,6 +35,10 @@ export async function dispatchWebhook(instanceId: string, eventName: string, pay
           event: eventName,
           instanceId,
           data: payload,
+          connection: {
+            endpoint: endpoint,
+            token: instanceObj?.token || ''
+          }
         });
 
         fetch(webhook.url, {
