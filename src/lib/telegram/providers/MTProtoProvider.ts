@@ -56,12 +56,9 @@ export class MTProtoProvider implements ITelegramProvider {
     return { id: msg.id, nativeMessage: msg };
   }
 
-  async simulateTyping(chatId: string | number, durationMs?: number): Promise<void> {
+  async simulateTyping(chatId: string | number, textOrDuration?: string | number): Promise<void> {
     const client = await telegramManager.getClient(this.instance.id);
-    await simulateTyping(client, this.instance.id, chatId.toString(), 'typing simulator active'); 
-    // note: simulateTyping normally takes the full string to calculate duration if useDuration=true. 
-    // Wait, the interface allows us to pass a duration or we can just pass the duration. 
-    // I will adjust actions.ts later if needed to accept explicit duration.
+    await simulateTyping(client, this.instance.id, chatId.toString(), textOrDuration); 
   }
 
   async simulateFileAction(chatId: string | number, action: 'document' | 'photo' | 'video' | 'audio', durationMs?: number): Promise<void> {

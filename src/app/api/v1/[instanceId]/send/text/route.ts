@@ -44,7 +44,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
       
       for (let i = 0; i < parts.length; i++) {
         const part = parts[i];
-        await provider.simulateTyping(chatId);
+        await provider.simulateTyping(chatId, part);
         
         const message = await provider.sendMessage(chatId, part, {
           replyToMsgId: i === 0 ? replyToMsgId : undefined, // Reply only to the first part
@@ -56,7 +56,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
       resData = { success: true, isSplit: true, messageIds };
     } else {
       // Normal behavior
-      await provider.simulateTyping(chatId);
+      if (body.typingTime) {
+        await provider.simulateTyping(chatId, body.typingTime);
+      } else {
+        await provider.simulateTyping(chatId, body.text);
+      }
 
       const message = await provider.sendMessage(chatId, text, {
         replyToMsgId: replyToMsgId,

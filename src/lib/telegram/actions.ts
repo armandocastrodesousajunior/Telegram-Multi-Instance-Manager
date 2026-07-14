@@ -2,17 +2,22 @@ import { TelegramClient } from 'telegram';
 import { Api } from 'telegram';
 import { prisma } from '../db';
 
-export async function simulateTyping(client: TelegramClient, instanceId: string, chatId: string, text: string) {
+export async function simulateTyping(client: TelegramClient, instanceId: string, chatId: string, textOrDuration?: string | number) {
   const settings = await prisma.instanceSettings.findUnique({ where: { instanceId } });
   if (!settings || !settings.typingEnabled) return;
 
   let duration = 0;
-  if (settings.typingUseDuration) {
+  if (typeof textOrDuration === 'number') {
+    duration = textOrDuration;
+  } else if (typeof textOrDuration === 'string' && settings.typingUseDuration) {
+    const rawText = textOrDuration.replace(/<[^>]*>/g, '');
     const msPerChar = settings.typingMsPerChar || 10;
-    duration = Math.min(text.length * msPerChar, 30000); // Max 30s
+    duration = rawText.length * msPerChar;
   } else {
     duration = (settings.typingFixedSeconds || 5) * 1000;
   }
+  
+  duration = Math.min(duration, 30000); // Max 30s
   
   if (duration > 0) {
     try {

@@ -215,11 +215,21 @@ export class BotApiProvider implements ITelegramProvider {
     return { id: msgId, nativeMessage: result };
   }
 
-  async simulateTyping(chatId: string | number, durationMs?: number): Promise<void> {
+  async simulateTyping(chatId: string | number, textOrDuration?: string | number): Promise<void> {
     const settings = await prisma.instanceSettings.findUnique({ where: { instanceId: this.instance.id } });
     if (!settings || !settings.typingEnabled) return;
 
-    let duration = durationMs || ((settings.typingFixedSeconds || 5) * 1000);
+    let duration = 0;
+    if (typeof textOrDuration === 'number') {
+      duration = textOrDuration;
+    } else if (typeof textOrDuration === 'string' && settings.typingUseDuration) {
+      const rawText = textOrDuration.replace(/<[^>]*>/g, '');
+      const msPerChar = settings.typingMsPerChar || 10;
+      duration = rawText.length * msPerChar;
+    } else {
+      duration = (settings.typingFixedSeconds || 5) * 1000;
+    }
+    
     duration = Math.min(duration, 30000);
 
     if (duration > 0) {

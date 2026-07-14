@@ -42,7 +42,7 @@ export interface ITelegramProvider {
   /**
    * Simula a ação de digitando
    */
-  simulateTyping(chatId: string | number, durationMs?: number): Promise<void>;
+  simulateTyping(chatId: string | number, textOrDuration?: string | number): Promise<void>;
 
   /**
    * Simula envio de arquivos

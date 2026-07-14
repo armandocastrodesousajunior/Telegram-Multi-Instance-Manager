@@ -176,7 +176,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
         const replyTo = !firstSent ? replyToMsgId : undefined;
 
         if (action.type === 'text') {
-          await provider.simulateTyping(chatId);
+          await provider.simulateTyping(chatId, action.text);
           const msg = await provider.sendMessage(chatId, action.text!, {
             replyToMsgId: replyTo,
             parseMode: parseMode || undefined
