@@ -128,6 +128,7 @@ export default function InstanceSettingsPage() {
     elevenLabsModelId: "eleven_multilingual_v2",
   });
   const [elevenLabsVoices, setElevenLabsVoices] = useState<any[]>([]);
+  const [elevenLabsModels, setElevenLabsModels] = useState<any[]>([]);
   const [loadingVoices, setLoadingVoices] = useState(false);
   const [instanceData, setInstanceData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -266,22 +267,28 @@ export default function InstanceSettingsPage() {
     }
   };
 
-  const fetchElevenLabsVoices = async () => {
+  const fetchElevenLabsData = async () => {
     if (!settings.elevenLabsApiKey) return;
     try {
       setLoadingVoices(true);
-      const response = await fetch('https://api.elevenlabs.io/v1/voices', {
-        headers: { 'xi-api-key': settings.elevenLabsApiKey }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setElevenLabsVoices(data.voices);
+      
+      const [voicesRes, modelsRes] = await Promise.all([
+        fetch('https://api.elevenlabs.io/v1/voices', { headers: { 'xi-api-key': settings.elevenLabsApiKey } }),
+        fetch('https://api.elevenlabs.io/v1/models', { headers: { 'xi-api-key': settings.elevenLabsApiKey } })
+      ]);
+
+      if (voicesRes.ok && modelsRes.ok) {
+        const voicesData = await voicesRes.json();
+        const modelsData = await modelsRes.json();
+        setElevenLabsVoices(voicesData.voices);
+        // Only keep models that support Text-to-Speech
+        setElevenLabsModels(modelsData.filter((m: any) => m.can_do_text_to_speech));
       } else {
-        alert("Falha ao buscar vozes. Verifique a API Key.");
+        alert("Falha ao buscar dados. Verifique a API Key.");
       }
     } catch (e) {
       console.error(e);
-      alert("Erro ao buscar vozes da ElevenLabs.");
+      alert("Erro ao buscar dados da ElevenLabs.");
     } finally {
       setLoadingVoices(false);
     }
@@ -545,8 +552,8 @@ export default function InstanceSettingsPage() {
                     onChange={(e) => setSettings({ ...settings, elevenLabsApiKey: e.target.value })}
                     style={{ flex: 1 }}
                   />
-                  <button type="button" className="btn-secondary" onClick={fetchElevenLabsVoices} disabled={!settings.elevenLabsApiKey || loadingVoices}>
-                    {loadingVoices ? "Loading..." : "Load Voices"}
+                  <button type="button" className="btn-secondary" onClick={fetchElevenLabsData} disabled={!settings.elevenLabsApiKey || loadingVoices}>
+                    {loadingVoices ? "Loading..." : "Load Data"}
                   </button>
                 </div>
                 <p style={{ fontSize: "13px", color: "var(--text-secondary)", marginTop: "8px" }}>
@@ -580,9 +587,18 @@ export default function InstanceSettingsPage() {
                     value={settings.elevenLabsModelId}
                     onChange={(e) => setSettings({ ...settings, elevenLabsModelId: e.target.value })}
                   >
-                    <option value="eleven_multilingual_v2">Eleven Multilingual v2 (Recommended)</option>
-                    <option value="eleven_turbo_v2_5">Eleven Turbo v2.5 (Fastest)</option>
-                    <option value="eleven_monolingual_v1">Eleven Monolingual v1</option>
+                    <option value="">Select a model...</option>
+                    {elevenLabsModels.length > 0 ? (
+                      elevenLabsModels.map((m) => (
+                        <option key={m.model_id} value={m.model_id}>{m.name}</option>
+                      ))
+                    ) : (
+                      <>
+                        <option value="eleven_multilingual_v2">Eleven Multilingual v2 (Recommended)</option>
+                        <option value="eleven_turbo_v2_5">Eleven Turbo v2.5 (Fastest)</option>
+                        <option value="eleven_monolingual_v1">Eleven Monolingual v1</option>
+                      </>
+                    )}
                   </select>
                 </div>
               </div>

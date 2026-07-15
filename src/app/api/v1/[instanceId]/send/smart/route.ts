@@ -110,7 +110,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
       if (action.type !== 'text') {
         const isVideo = action.type.includes('video');
         
-        if (settings?.mediaCacheEnabled) {
+        if (settings?.mediaCacheEnabled && action.url) {
           try {
             const cached = await getCachedMedia(instanceId, action.url!);
             if (cached) {
@@ -285,8 +285,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
             }
 
           } else {
-            // ── Envio Normal: client.invoke nunca é tocado ──────────────────
-            let fileData: any = action.cachedMedia || action.prefetchedPath || action.url!;
+            let fileData: any = action.cachedMedia || action.prefetchedPath || action.url;
+            if (!fileData) {
+              console.warn(`[SmartRoute] Pulando ação ${action.type} pois não há arquivo ou url disponível (possível falha no pre-fetch).`);
+              continue;
+            }
 
             console.log(`[SmartRoute] Enviando mídia normal para o Telegram...`);
             let msg: any;
