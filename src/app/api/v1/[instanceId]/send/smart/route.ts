@@ -12,6 +12,7 @@ import crypto from 'crypto';
 import { getCachedMedia, saveMediaToCache } from '@/lib/telegram/mediaCache';
 import { getOrFetchEntity } from '@/lib/telegram/utils';
 import { sendViewOnceFile } from '@/lib/telegram/viewOnce';
+import { generateAudio } from '@/lib/elevenlabs/client';
 
 interface SmartAction {
   type: string;
@@ -57,7 +58,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     const splitEnabled = settings ? settings.splitMessagesEnabled : true;
 
     // Parse the content
-    const regex = /<(image|video|audio|voice|document|view_once_image|view_once_video)\s+url=["']([^"']+)["'](?:\s+filename=["']([^"']+)["'])?>(.*?)<\/\1>/gis;
+    const regex = /<(image|video|audio|voice|document|view_once_image|view_once_video|voice_ai)(?:\s+url=["']([^"']+)["'])?(?:\s+filename=["']([^"']+)["'])?>(.*?)<\/\1>/gis;
     
     const items: SmartAction[] = [];
     let lastIndex = 0;
@@ -123,7 +124,41 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
           }
         }
 
-        if (isVideo && settings?.downloadVideoFirst) {
+        if (action.type === 'voice_ai') {
+          if (!settings?.elevenLabsApiKey || !settings?.elevenLabsVoiceId) {
+            console.error('[SmartRoute] Voice AI requested but ElevenLabs is not configured.');
+            continue;
+          }
+          try {
+            const textToSpeak = action.caption || '';
+            action.caption = ''; // Clear caption for voice note
+            
+            console.log(`[SmartRoute] Gerando Voice AI para o texto: "${textToSpeak}"`);
+            const audioBuffer = await generateAudio(
+              settings.elevenLabsApiKey,
+              settings.elevenLabsVoiceId,
+              settings.elevenLabsModelId || 'eleven_multilingual_v2',
+              textToSpeak
+            );
+            
+            let realDurationMs = 0;
+            try {
+              const metadata = await mm.parseBuffer(audioBuffer, 'audio/mpeg');
+              if (metadata.format.duration) realDurationMs = Math.round(metadata.format.duration * 1000);
+            } catch (e) {}
+
+            const uniqueId = crypto.randomUUID();
+            const tempPath = path.join(os.tmpdir(), `${uniqueId}_voice_ai.mp3`);
+            fs.writeFileSync(tempPath, audioBuffer);
+            
+            action.type = 'voice'; // Change to standard voice so Stage 2 handles it
+            action.prefetchedPath = tempPath;
+            action.prefetchedDuration = realDurationMs;
+            console.log(`[SmartRoute] Voice AI gerado: ${tempPath} (${realDurationMs}ms)`);
+          } catch (e) {
+            console.error(`[SmartRoute] Falha ao gerar Voice AI:`, e);
+          }
+        } else if (isVideo && settings?.downloadVideoFirst) {
           try {
             console.log(`[SmartRoute] Pre-fetching mídia: ${action.url!}`);
             const res = await fetch(action.url!);

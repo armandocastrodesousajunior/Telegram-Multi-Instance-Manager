@@ -27,6 +27,9 @@ interface InstanceSettings {
   viewOnceTtlSeconds: number;
   botSelfDestructMode: string;
   botSelfDestructTimer: number;
+  elevenLabsApiKey: string;
+  elevenLabsVoiceId: string;
+  elevenLabsModelId: string;
 }
 
 const Section = ({ title, children }: { title: string, children: React.ReactNode }) => (
@@ -120,7 +123,12 @@ export default function InstanceSettingsPage() {
     viewOnceTtlSeconds: 2147483647,
     botSelfDestructMode: "AFTER_SEND",
     botSelfDestructTimer: 60,
+    elevenLabsApiKey: "",
+    elevenLabsVoiceId: "",
+    elevenLabsModelId: "eleven_multilingual_v2",
   });
+  const [elevenLabsVoices, setElevenLabsVoices] = useState<any[]>([]);
+  const [loadingVoices, setLoadingVoices] = useState(false);
   const [instanceData, setInstanceData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -166,6 +174,9 @@ export default function InstanceSettingsPage() {
         viewOnceTtlSeconds: data.viewOnceTtlSeconds ?? 2147483647,
         botSelfDestructMode: data.botSelfDestructMode ?? "AFTER_SEND",
         botSelfDestructTimer: data.botSelfDestructTimer ?? 60,
+        elevenLabsApiKey: data.elevenLabsApiKey ?? "",
+        elevenLabsVoiceId: data.elevenLabsVoiceId ?? "",
+        elevenLabsModelId: data.elevenLabsModelId ?? "eleven_multilingual_v2",
       });
       setInstanceData(instanceData);
       setInstanceToken(instanceData.token || "");
@@ -227,6 +238,9 @@ export default function InstanceSettingsPage() {
       viewOnceTtlSeconds: Number(settings.viewOnceTtlSeconds),
       botSelfDestructMode: settings.botSelfDestructMode,
       botSelfDestructTimer: Number(settings.botSelfDestructTimer) || 0,
+      elevenLabsApiKey: settings.elevenLabsApiKey,
+      elevenLabsVoiceId: settings.elevenLabsVoiceId,
+      elevenLabsModelId: settings.elevenLabsModelId,
     };
 
     try {
@@ -249,6 +263,27 @@ export default function InstanceSettingsPage() {
     } catch (error) {
       console.error(error);
       alert("Failed to clear cache");
+    }
+  };
+
+  const fetchElevenLabsVoices = async () => {
+    if (!settings.elevenLabsApiKey) return;
+    try {
+      setLoadingVoices(true);
+      const response = await fetch('https://api.elevenlabs.io/v1/voices', {
+        headers: { 'xi-api-key': settings.elevenLabsApiKey }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setElevenLabsVoices(data.voices);
+      } else {
+        alert("Falha ao buscar vozes. Verifique a API Key.");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Erro ao buscar vozes da ElevenLabs.");
+    } finally {
+      setLoadingVoices(false);
     }
   };
 
@@ -496,6 +531,63 @@ export default function InstanceSettingsPage() {
               </div>
             </Section>
 
+            <Section title="Voice AI (ElevenLabs TTS)">
+              <div style={{ gridColumn: "1 / -1" }}>
+                <label style={{ display: "block", fontSize: "14px", fontWeight: 500, color: "var(--text-secondary)", marginBottom: "8px" }}>
+                  ElevenLabs API Key
+                </label>
+                <div style={{ display: "flex", gap: "12px" }}>
+                  <input 
+                    type="password"
+                    className="input-field"
+                    placeholder="Insert your API key here..."
+                    value={settings.elevenLabsApiKey}
+                    onChange={(e) => setSettings({ ...settings, elevenLabsApiKey: e.target.value })}
+                    style={{ flex: 1 }}
+                  />
+                  <button type="button" className="btn-secondary" onClick={fetchElevenLabsVoices} disabled={!settings.elevenLabsApiKey || loadingVoices}>
+                    {loadingVoices ? "Loading..." : "Load Voices"}
+                  </button>
+                </div>
+                <p style={{ fontSize: "13px", color: "var(--text-secondary)", marginTop: "8px" }}>
+                  Used by the `/send/voice-ai` route and `&lt;voice_ai&gt;` tag in the Smart Route.
+                </p>
+              </div>
+
+              <div style={{ gridColumn: "1 / -1", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "14px", fontWeight: 500, color: "var(--text-secondary)", marginBottom: "8px" }}>
+                    Selected Voice
+                  </label>
+                  <select 
+                    className="input-field"
+                    value={settings.elevenLabsVoiceId}
+                    onChange={(e) => setSettings({ ...settings, elevenLabsVoiceId: e.target.value })}
+                  >
+                    <option value="">Select a voice...</option>
+                    {elevenLabsVoices.map((v) => (
+                      <option key={v.voice_id} value={v.voice_id}>{v.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "14px", fontWeight: 500, color: "var(--text-secondary)", marginBottom: "8px" }}>
+                    AI Model
+                  </label>
+                  <select 
+                    className="input-field"
+                    value={settings.elevenLabsModelId}
+                    onChange={(e) => setSettings({ ...settings, elevenLabsModelId: e.target.value })}
+                  >
+                    <option value="eleven_multilingual_v2">Eleven Multilingual v2 (Recommended)</option>
+                    <option value="eleven_turbo_v2_5">Eleven Turbo v2.5 (Fastest)</option>
+                    <option value="eleven_monolingual_v1">Eleven Monolingual v1</option>
+                  </select>
+                </div>
+              </div>
+            </Section>
+
             {instanceData?.type === 'BOT' && (
               <Section title="Auto-Destruição para Bots (Fallback)">
                 <div style={{ gridColumn: "1 / -1", marginBottom: "8px" }}>
@@ -533,7 +625,7 @@ export default function InstanceSettingsPage() {
               </Section>
             )}
 
-            <div style={{ marginTop: "32px", display: "flex", justifyContent: "flex-end" }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "40px" }}>
               <button type="submit" className="btn-primary" disabled={saving}>
                 <Save size={18} />
                 {saving ? "Saving..." : "Save Settings"}

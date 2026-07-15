@@ -80,6 +80,11 @@ model InstanceSettings {
   // Bot Self-Destruct Fallback
   botSelfDestructMode  String  @default("AFTER_SEND") // AFTER_SEND, AFTER_REPLY
   botSelfDestructTimer Int     @default(60)
+
+  // Voice AI - ElevenLabs
+  elevenLabsApiKey   String?
+  elevenLabsVoiceId  String?
+  elevenLabsModelId  String? @default("eleven_multilingual_v2")
 }
 
 model MediaCache {
