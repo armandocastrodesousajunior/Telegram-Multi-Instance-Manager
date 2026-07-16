@@ -57,8 +57,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     
     const splitEnabled = settings ? settings.splitMessagesEnabled : true;
 
-    // Parse the content
-    const regex = /<(image|video|audio|voice|document|view_once_image|view_once_video|voice_ai)(?:\s+url=["']([^"']+)["'])?(?:\s+filename=["']([^"']+)["'])?>(.*?)<\/\1>/gis;
+    // Parse the content (agora flexível para aceitar outros atributos como transcription)
+    const regex = /<(image|video|audio|voice|document|view_once_image|view_once_video|voice_ai)([^>]*)>(.*?)<\/\1>/gis;
     
     const items: SmartAction[] = [];
     let lastIndex = 0;
@@ -70,11 +70,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
         items.push({ type: 'text', text: textBefore });
       }
       
+      const tag = match[1].toLowerCase();
+      const attributesString = match[2];
+      const caption = match[3] || '';
+      
+      const urlMatch = attributesString.match(/url=["']([^"']+)["']/i);
+      const filenameMatch = attributesString.match(/filename=["']([^"']+)["']/i);
+      
       items.push({
-        type: match[1].toLowerCase(),
-        url: match[2],
-        filename: match[3] || undefined,
-        caption: match[4] || ''
+        type: tag,
+        url: urlMatch ? urlMatch[1] : undefined,
+        filename: filenameMatch ? filenameMatch[1] : undefined,
+        caption: caption
       });
       
       lastIndex = regex.lastIndex;
