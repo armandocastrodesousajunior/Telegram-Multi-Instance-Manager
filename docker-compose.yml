@@ -5,6 +5,7 @@ services:
     image: postgres:15-alpine
     container_name: telegram-multi-instance-manager-db
     restart: unless-stopped
+    command: ["postgres", "-c", "max_connections=500"]
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -27,7 +28,7 @@ services:
     environment:
       - PUBLIC_URL=http://localhost:3000
       # Use the db service name to connect from the Node.js container
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/telegram_multi_instance_manager?schema=public
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/telegram_multi_instance_manager?schema=public&connection_limit=200&pool_timeout=50
       - ACCESS_TOKEN=change_me_to_a_strong_secret
       - TELEGRAM_API_ID=
       - TELEGRAM_API_HASH=
