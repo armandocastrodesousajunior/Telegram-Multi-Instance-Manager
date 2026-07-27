@@ -1,6 +1,7 @@
 import { TelegramClient } from 'telegram';
 import { Api } from 'telegram';
 import { prisma } from '../db';
+import { getOrFetchEntity } from './utils';
 
 export async function simulateTyping(client: TelegramClient, instanceId: string, chatId: string, textOrDuration?: string | number) {
   const settings = await prisma.instanceSettings.findUnique({ where: { instanceId } });
@@ -21,7 +22,7 @@ export async function simulateTyping(client: TelegramClient, instanceId: string,
   
   if (duration > 0) {
     try {
-      const peer = await client.getInputEntity(chatId);
+      const peer = await getOrFetchEntity(client, chatId);
       const action = new Api.SendMessageTypingAction();
       
       let elapsed = 0;
@@ -66,7 +67,7 @@ export async function simulateFileAction(client: TelegramClient, instanceId: str
 
   if (enabled && action) {
     try {
-      const peer = await client.getInputEntity(chatId);
+      const peer = await getOrFetchEntity(client, chatId);
       
       let elapsed = 0;
       while (elapsed < duration) {
