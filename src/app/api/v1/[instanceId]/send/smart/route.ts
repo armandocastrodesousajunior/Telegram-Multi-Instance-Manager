@@ -23,6 +23,7 @@ interface SmartAction {
   prefetchedPath?: string;
   prefetchedDuration?: number;
   cachedMedia?: any;
+  timings?: any;
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ instanceId: string }> }) {
@@ -36,6 +37,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
   if (!(await checkAuth(req, authInstanceId))) return unauthorizedResponse();
 
   try {
+    const requestStartTime = Date.now();
+    const stageTimings: any = { stage1PrefetchMs: 0, stage2ExecutionMs: 0, actions: [] };
     const { instanceId } = await params;
     const body = await req.json();
     const { chatId, content, replyToMsgId, parseMode } = body;
@@ -113,8 +116,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     // ==========================================
     // STAGE 1: PRE-FETCH DE MÍDIAS
     // ==========================================
+    const tStage1Start = Date.now();
     for (const action of actions) {
       if (action.type !== 'text') {
+        const tActionPrefetch = Date.now();
         const isVideo = action.type.includes('video');
         
         if (settings?.mediaCacheEnabled && action.url) {
@@ -123,6 +128,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
             if (cached) {
               action.cachedMedia = cached.media;
               action.prefetchedDuration = cached.durationMs;
+              action.timings = { prefetchMs: Date.now() - tActionPrefetch, cacheHit: true };
               console.log(`[SmartRoute] 🚀 Mídia carregada do Cache Zero-Upload: ${action.url}`);
               continue; // Pula todo o pre-fetch físico!
             }
@@ -200,8 +206,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
             console.error(`[SmartRoute] Exceção no pre-fetch de ${action.url!}:`, e);
           }
         }
+        if (!action.timings) {
+          action.timings = { prefetchMs: Date.now() - tActionPrefetch, cacheHit: false };
+        }
       }
     }
+    stageTimings.stage1PrefetchMs = Date.now() - tStage1Start;
 
     const messageIds: number[] = [];
     let firstSent = false;
@@ -212,17 +222,29 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     // IMPORTANTE: Nenhum monkey-patching de client.invoke aqui.
     // View-once é tratado via API de baixo nível (sendViewOnceFile) que
     // não toca no invoke compartilhado, eliminando race conditions.
+    const tStage2Start = Date.now();
     try {
       for (let i = 0; i < actions.length; i++) {
         const action = actions[i];
         const replyTo = !firstSent ? replyToMsgId : undefined;
+        const tActionStart = Date.now();
+        const actionTimings: any = {
+          type: action.type,
+          prefetchMs: action.timings?.prefetchMs || 0,
+          cacheHit: action.timings?.cacheHit || false
+        };
 
         if (action.type === 'text') {
+          const tSim = Date.now();
           await provider.simulateTyping(chatId, action.text);
+          actionTimings.simulationMs = Date.now() - tSim;
+
+          const tSend = Date.now();
           const msg = await provider.sendMessage(chatId, action.text!, {
             replyToMsgId: replyTo,
             parseMode: parseMode || undefined
           });
+          actionTimings.telegramSendMs = Date.now() - tSend;
           messageIds.push(msg.id);
 
         } else {
@@ -243,7 +265,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
 
           console.log(`[SmartRoute] Processando ação: type=${action.type} isViewOnce=${isViewOnce} url=${action.url}`);
 
+          const tSim = Date.now();
           await provider.simulateFileAction(chatId, simAction, action.prefetchedDuration || 0);
+          actionTimings.simulationMs = Date.now() - tSim;
 
           // ── View Once: usa API de baixo nível (sem tocar em client.invoke) ──
           if (isViewOnce) {
@@ -253,6 +277,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
 
             if (!tempPath || !fs.existsSync(tempPath)) {
               try {
+                const tDl = Date.now();
                 console.log(`[SmartRoute] Baixando mídia view-once: ${action.url}`);
                 const res = await fetch(action.url!);
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -266,6 +291,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
                 tempPath = path.join(os.tmpdir(), `${uniqueId}_vo.${ext}`);
                 fs.writeFileSync(tempPath, buffer);
                 ownedTemp = true;
+                actionTimings.mediaDownloadMs = Date.now() - tDl;
                 console.log(`[SmartRoute] Download concluído para view-once: ${tempPath}`);
               } catch (dlErr) {
                 console.error(`[SmartRoute] Falha ao baixar view-once:`, dlErr);
@@ -276,12 +302,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
             try {
               const ttlSeconds = settings?.viewOnceTtlSeconds ?? 2147483647;
               console.log(`[SmartRoute] Enviando view-once com ttlSeconds=${ttlSeconds}...`);
+              const tSend = Date.now();
               const msg = await provider.sendViewOnceFile(chatId, tempPath!, isPhoto ? 'photo' : 'video', {
                 caption: action.caption || '',
                 replyToMsgId: replyTo,
                 ttlSeconds,
                 parseMode,
               });
+              actionTimings.telegramSendMs = Date.now() - tSend;
               console.log(`[SmartRoute] View-once enviado. Msg ID: ${msg.id}`);
               messageIds.push(msg.id);
             } finally {
@@ -300,6 +328,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
 
             console.log(`[SmartRoute] Enviando mídia normal para o Telegram...`);
             let msg: any;
+            const tSend = Date.now();
             try {
               msg = await provider.sendFile(chatId, fileData, {
                 caption: action.caption || '',
@@ -325,18 +354,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
                 throw uploadErr;
               }
             }
+            actionTimings.telegramSendMs = Date.now() - tSend;
             
             console.log(`[SmartRoute] Mídia normal enviada. Msg ID: ${msg.id}`);
             messageIds.push(msg.id);
             
             if (settings?.mediaCacheEnabled && !action.cachedMedia && instance.type !== 'BOT') {
+              const tCache = Date.now();
               await saveMediaToCache(instanceId, action.url!, msg.nativeMessage, action.prefetchedDuration || 0);
+              actionTimings.cacheSaveMs = Date.now() - tCache;
             }
           }
         }
 
+        actionTimings.totalActionMs = Date.now() - tActionStart;
+        stageTimings.actions.push(actionTimings);
         firstSent = true;
       }
+      stageTimings.stage2ExecutionMs = Date.now() - tStage2Start;
     } finally {
       // ==========================================
       // STAGE 3: LIMPEZA DOS TEMPORÁRIOS
@@ -351,7 +386,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
       }
     }
 
-    const resData = { success: true, messageIds };
+    const totalRequestMs = Date.now() - requestStartTime;
+    const resData = { success: true, messageIds, timings: { totalRequestMs, ...stageTimings } };
     await logApiRequest({ instanceId, endpoint: '/send/smart', method: 'POST', requestBody: body, responseStatus: 200, responseBody: resData, success: true });
     return NextResponse.json(resData);
   } catch (err: any) {

@@ -16,6 +16,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
   if (!(await checkAuth(req, authInstanceId))) return unauthorizedResponse();
 
   try {
+    const requestStartTime = Date.now();
     const { instanceId } = await params;
     const body = await req.json();
     const { chatId, text, replyToMsgId, parseMode } = body;
@@ -41,33 +42,45 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     if (splitEnabled && text.includes('\n\n')) {
       const parts = text.split('\n\n').filter((p: string) => p.trim() !== '');
       const messageIds: number[] = [];
+      const actions: any[] = [];
       
       for (let i = 0; i < parts.length; i++) {
         const part = parts[i];
+        const tSim = Date.now();
         await provider.simulateTyping(chatId, part);
+        const simulationMs = Date.now() - tSim;
         
+        const tSend = Date.now();
         const message = await provider.sendMessage(chatId, part, {
           replyToMsgId: i === 0 ? replyToMsgId : undefined, // Reply only to the first part
           parseMode: parseMode || undefined
         });
+        const telegramSendMs = Date.now() - tSend;
         messageIds.push(message.id);
+        actions.push({ text: part, simulationMs, telegramSendMs, totalActionMs: simulationMs + telegramSendMs });
       }
       
-      resData = { success: true, isSplit: true, messageIds };
+      const totalRequestMs = Date.now() - requestStartTime;
+      resData = { success: true, isSplit: true, messageIds, timings: { totalRequestMs, actions } };
     } else {
       // Normal behavior
+      const tSim = Date.now();
       if (body.typingTime) {
         await provider.simulateTyping(chatId, body.typingTime);
       } else {
         await provider.simulateTyping(chatId, body.text);
       }
+      const simulationMs = Date.now() - tSim;
 
+      const tSend = Date.now();
       const message = await provider.sendMessage(chatId, text, {
         replyToMsgId: replyToMsgId,
         parseMode: parseMode || undefined
       });
+      const telegramSendMs = Date.now() - tSend;
 
-      resData = { success: true, messageId: message.id };
+      const totalRequestMs = Date.now() - requestStartTime;
+      resData = { success: true, messageId: message.id, timings: { totalRequestMs, simulationMs, telegramSendMs } };
     }
     await logApiRequest({ instanceId, endpoint: '/send/text', method: 'POST', requestBody: body, responseStatus: 200, responseBody: resData, success: true });
     return NextResponse.json(resData);
