@@ -16,6 +16,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
   if (!(await checkAuth(req, authInstanceId))) return unauthorizedResponse();
 
   try {
+    const requestStartTime = Date.now();
     const { instanceId } = await params;
     const { chatId, url, caption, replyToMsgId, parseMode } = await req.json();
 
@@ -26,7 +27,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     const instance = await prisma.instance.findUnique({ where: { id: instanceId } });
     if (!instance) return NextResponse.json({ error: 'Instance not found' }, { status: 404 });
     const provider = await ProviderFactory.getProvider(instance);
+    const tSim = Date.now();
     await provider.simulateFileAction(chatId, 'document');
+    const simulationMs = Date.now() - tSim;
 
     const settings = await prisma.instanceSettings.findUnique({ where: { instanceId } });
     
@@ -42,25 +45,30 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     }
 
     let message: any;
+    let telegramSendMs = 0;
     try {
+      const tSend = Date.now();
       message = await provider.sendFile(chatId, fileData, {
         caption: caption || '',
         replyToMsgId: replyToMsgId,
         parseMode: parseMode || undefined,
         forceDocument: true
       });
+      telegramSendMs = Date.now() - tSend;
     } catch (uploadErr: any) {
       if (uploadErr.message?.includes('FILE_REFERENCE_EXPIRED') && cachedMedia) {
         console.log(`[DocumentRoute] Cache expirado para ${url}. Tentando novamente com URL original...`);
         await prisma.mediaCache.deleteMany({ where: { instanceId, url } });
         cachedMedia = null;
         fileData = url;
+        const tSend = Date.now();
         message = await provider.sendFile(chatId, fileData, {
           caption: caption || '',
           replyToMsgId: replyToMsgId,
           parseMode: parseMode || undefined,
           forceDocument: true
         });
+        telegramSendMs = Date.now() - tSend;
       } else {
         throw uploadErr;
       }
@@ -70,7 +78,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
       await saveMediaToCache(instanceId, url, message.nativeMessage, 0);
     }
 
-    return NextResponse.json({ success: true, messageId: message.id });
+    const totalTimingMs = Date.now() - requestStartTime;
+    const total = simulationMs + telegramSendMs;
+    const messages = [{ success: true, id: message.id, timing: { simulationMs, telegramSendMs, totalActionMs: total, totalTimingMs: total, totalMs: total, cacheHit: !!cachedMedia } }];
+    return NextResponse.json({ success: true, totalTimingMs, messages });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

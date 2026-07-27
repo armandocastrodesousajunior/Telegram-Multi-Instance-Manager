@@ -20,6 +20,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
   if (!(await checkAuth(req, authInstanceId))) return unauthorizedResponse();
 
   try {
+    const requestStartTime = Date.now();
     const { instanceId } = await params;
     const body = await req.json();
     const { chatId, url, caption, replyToMsgId, viewOnce, parseMode } = body;
@@ -37,10 +38,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     // Usa API de baixo nível (sem monkey-patching de client.invoke) para evitar
     // race condition entre requisições concorrentes.
     if (viewOnce) {
+      const tSim = Date.now();
       await provider.simulateFileAction(chatId, 'photo');
+      const simulationMs = Date.now() - tSim;
 
       let tempPath: string | null = null;
+      let mediaDownloadMs = 0;
       try {
+        const tDl = Date.now();
         const res = await fetch(url);
         if (!res.ok) throw new Error(`Falha ao baixar imagem: HTTP ${res.status}`);
         const arrayBuffer = await res.arrayBuffer();
@@ -53,16 +58,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
         } catch (e) {}
         tempPath = path.join(os.tmpdir(), `${uniqueId}_vo_image.${ext}`);
         fs.writeFileSync(tempPath, buffer);
+        mediaDownloadMs = Date.now() - tDl;
 
         const ttlSeconds = settings?.viewOnceTtlSeconds ?? 2147483647;
+        const tSend = Date.now();
         const message = await provider.sendViewOnceFile(chatId, tempPath, 'photo', {
           caption: caption || '',
           replyToMsgId,
           ttlSeconds,
           parseMode,
         });
-
-        return NextResponse.json({ success: true, messageId: message.id });
+        const telegramSendMs = Date.now() - tSend;
+        const totalTimingMs = Date.now() - requestStartTime;
+        const total = simulationMs + mediaDownloadMs + telegramSendMs;
+        const messages = [{ success: true, id: message.id, timing: { simulationMs, mediaDownloadMs, telegramSendMs, totalActionMs: total, totalTimingMs: total, totalMs: total } }];
+        return NextResponse.json({ success: true, totalTimingMs, messages });
       } finally {
         if (tempPath && fs.existsSync(tempPath)) {
           try { fs.unlinkSync(tempPath); } catch (e) {}
@@ -71,7 +81,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     }
 
     // ── Envio Normal (sem view once) ───────────────────────────────────────────
+    const tSim = Date.now();
     await provider.simulateFileAction(chatId, 'photo');
+    const simulationMs = Date.now() - tSim;
 
     let fileData: any = url;
     let tempPath: string | null = null;
@@ -86,24 +98,29 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     }
 
     let message: any;
+    let telegramSendMs = 0;
     try {
       try {
+        const tSend = Date.now();
         message = await provider.sendFile(chatId, fileData, {
           caption: caption || '',
           replyToMsgId: replyToMsgId,
           parseMode: parseMode || undefined,
         });
+        telegramSendMs = Date.now() - tSend;
       } catch (uploadErr: any) {
         if (uploadErr.message?.includes('FILE_REFERENCE_EXPIRED') && cachedMedia) {
           console.log(`[ImageRoute] Cache expirado para ${url}. Tentando novamente com URL original...`);
           await prisma.mediaCache.deleteMany({ where: { instanceId, url } });
           cachedMedia = null;
           fileData = tempPath && fs.existsSync(tempPath) ? tempPath : url;
+          const tSend = Date.now();
           message = await provider.sendFile(chatId, fileData, {
             caption: caption || '',
             replyToMsgId: replyToMsgId,
             parseMode: parseMode || undefined,
           });
+          telegramSendMs = Date.now() - tSend;
         } else {
           throw uploadErr;
         }
@@ -118,7 +135,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
       }
     }
 
-    return NextResponse.json({ success: true, messageId: message.id });
+    const totalTimingMs = Date.now() - requestStartTime;
+    const total = simulationMs + telegramSendMs;
+    const messages = [{ success: true, id: message.id, timing: { simulationMs, telegramSendMs, totalActionMs: total, totalTimingMs: total, totalMs: total, cacheHit: !!cachedMedia } }];
+    return NextResponse.json({ success: true, totalTimingMs, messages });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

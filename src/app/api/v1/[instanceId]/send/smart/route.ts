@@ -368,6 +368,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
         }
 
         actionTimings.totalActionMs = Date.now() - tActionStart;
+        actionTimings.totalTimingMs = actionTimings.totalActionMs;
+        actionTimings.totalMs = actionTimings.totalActionMs;
         stageTimings.actions.push(actionTimings);
         firstSent = true;
       }
@@ -387,7 +389,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     }
 
     const totalRequestMs = Date.now() - requestStartTime;
-    const resData = { success: true, messageIds, timings: { totalRequestMs, ...stageTimings } };
+    const messages = messageIds.map((id, index) => ({
+      success: true,
+      id,
+      timing: stageTimings.actions[index] || {}
+    }));
+    const resData = {
+      success: true,
+      totalTimingMs: totalRequestMs,
+      messages
+    };
     await logApiRequest({ instanceId, endpoint: '/send/smart', method: 'POST', requestBody: body, responseStatus: 200, responseBody: resData, success: true });
     return NextResponse.json(resData);
   } catch (err: any) {

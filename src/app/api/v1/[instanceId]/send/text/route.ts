@@ -57,11 +57,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
         });
         const telegramSendMs = Date.now() - tSend;
         messageIds.push(message.id);
-        actions.push({ text: part, simulationMs, telegramSendMs, totalActionMs: simulationMs + telegramSendMs });
+        const total = simulationMs + telegramSendMs;
+        actions.push({ simulationMs, telegramSendMs, totalActionMs: total, totalTimingMs: total, totalMs: total });
       }
       
       const totalRequestMs = Date.now() - requestStartTime;
-      resData = { success: true, isSplit: true, messageIds, timings: { totalRequestMs, actions } };
+      const messages = messageIds.map((id, index) => ({
+        success: true,
+        id,
+        timing: actions[index] || {}
+      }));
+      resData = { success: true, totalTimingMs: totalRequestMs, messages };
     } else {
       // Normal behavior
       const tSim = Date.now();
@@ -80,7 +86,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
       const telegramSendMs = Date.now() - tSend;
 
       const totalRequestMs = Date.now() - requestStartTime;
-      resData = { success: true, messageId: message.id, timings: { totalRequestMs, simulationMs, telegramSendMs } };
+      const total = simulationMs + telegramSendMs;
+      const messages = [
+        {
+          success: true,
+          id: message.id,
+          timing: { simulationMs, telegramSendMs, totalActionMs: total, totalTimingMs: total, totalMs: total }
+        }
+      ];
+      resData = { success: true, totalTimingMs: totalRequestMs, messages };
     }
     await logApiRequest({ instanceId, endpoint: '/send/text', method: 'POST', requestBody: body, responseStatus: 200, responseBody: resData, success: true });
     return NextResponse.json(resData);

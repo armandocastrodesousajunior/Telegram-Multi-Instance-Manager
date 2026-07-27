@@ -9,6 +9,7 @@ import crypto from 'crypto';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ instanceId: string }> }) {
   try {
+    const requestStartTime = Date.now();
     const { instanceId } = await params;
     const body = await req.json();
     const { chatId, text, replyToMsgId } = body;
@@ -28,12 +29,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     const provider = await ProviderFactory.getProvider(instance);
 
     // Generate Audio via ElevenLabs
+    const tEl = Date.now();
     const audioBuffer = await generateAudio(
       settings.elevenLabsApiKey, 
       settings.elevenLabsVoiceId, 
       settings.elevenLabsModelId || 'eleven_multilingual_v2', 
       text
     );
+    const elevenLabsMs = Date.now() - tEl;
 
     // Save to temp file since Providers usually expect a file path or URL for sendFile 
     // depending on the provider implementation. Buffer is also supported by sendFile!
@@ -44,15 +47,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
 
     try {
       // Simulate recording voice action
+      const tSim = Date.now();
       await provider.simulateFileAction(chatId, 'audio', 3000); // Wait 3s simulating recording
+      const simulationMs = Date.now() - tSim;
       
       // Send as voice note
+      const tSend = Date.now();
       const message = await provider.sendFile(chatId, tempPath, {
         replyToMsgId,
         voiceNote: true // Forces it to be sent as a voice note
       });
+      const telegramSendMs = Date.now() - tSend;
 
-      return NextResponse.json({ success: true, messageId: message.id });
+      const totalTimingMs = Date.now() - requestStartTime;
+      const total = elevenLabsMs + simulationMs + telegramSendMs;
+      const messages = [{ success: true, id: message.id, timing: { elevenLabsMs, simulationMs, telegramSendMs, totalActionMs: total, totalTimingMs: total, totalMs: total } }];
+      return NextResponse.json({ success: true, totalTimingMs, messages });
     } finally {
       // Cleanup temp file
       if (fs.existsSync(tempPath)) {
