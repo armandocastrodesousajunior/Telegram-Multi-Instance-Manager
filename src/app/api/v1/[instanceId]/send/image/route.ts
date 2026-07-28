@@ -7,7 +7,7 @@ import path from 'path';
 import os from 'os';
 import crypto from 'crypto';
 import { prisma } from '@/lib/db';
-import { getOrFetchEntity } from '@/lib/telegram/utils';
+import { getOrFetchEntity, getCachedInstance, getCachedInstanceSettings } from '@/lib/telegram/utils';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ instanceId: string }> }) {
   let authInstanceId = undefined;
@@ -21,6 +21,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
 
   try {
     const requestStartTime = Date.now();
+    const timingBreakdown: any = {};
     const { instanceId } = await params;
     const body = await req.json();
     const { chatId, url, caption, replyToMsgId, viewOnce, parseMode } = body;
@@ -29,10 +30,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
       return NextResponse.json({ error: 'chatId and url are required' }, { status: 400 });
     }
 
-    const instance = await prisma.instance.findUnique({ where: { id: instanceId } });
+    timingBreakdown.authMs = Date.now() - requestStartTime;
+
+    const tPrismaStart = Date.now();
+    const instance = await getCachedInstance(instanceId);
     if (!instance) return NextResponse.json({ error: 'Instance not found' }, { status: 404 });
+    
+    const tProviderStart = Date.now();
     const provider = await ProviderFactory.getProvider(instance);
-    const settings = await prisma.instanceSettings.findUnique({ where: { instanceId } });
+    timingBreakdown.providerMs = Date.now() - tProviderStart;
+    
+    const tSettingsStart = Date.now();
+    const settings = await getCachedInstanceSettings(instanceId);
+    timingBreakdown.prismaMs = Date.now() - tPrismaStart - timingBreakdown.providerMs;
 
     // ── View Once ──────────────────────────────────────────────────────────────
     // Usa API de baixo nível (sem monkey-patching de client.invoke) para evitar
@@ -72,7 +82,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
         const totalTimingMs = Date.now() - requestStartTime;
         const total = simulationMs + mediaDownloadMs + telegramSendMs;
         const messages = [{ success: true, id: message.id, timing: { simulationMs, mediaDownloadMs, telegramSendMs, totalActionMs: total, totalTimingMs: total, totalMs: total } }];
-        return NextResponse.json({ success: true, totalTimingMs, messages });
+        return NextResponse.json({ success: true, totalTimingMs, timingBreakdown, messages });
       } finally {
         if (tempPath && fs.existsSync(tempPath)) {
           try { fs.unlinkSync(tempPath); } catch (e) {}
@@ -138,7 +148,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     const totalTimingMs = Date.now() - requestStartTime;
     const total = simulationMs + telegramSendMs;
     const messages = [{ success: true, id: message.id, timing: { simulationMs, telegramSendMs, totalActionMs: total, totalTimingMs: total, totalMs: total, cacheHit: !!cachedMedia } }];
-    return NextResponse.json({ success: true, totalTimingMs, messages });
+    return NextResponse.json({ success: true, totalTimingMs, timingBreakdown, messages });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

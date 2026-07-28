@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { getCachedInstance, getCachedInstanceSettings } from '@/lib/telegram/utils';
 import { ProviderFactory } from '@/lib/telegram/providers/ProviderFactory';
 import { generateAudio } from '@/lib/elevenlabs/client';
 import fs from 'fs';
@@ -10,6 +11,7 @@ import crypto from 'crypto';
 export async function POST(req: NextRequest, { params }: { params: Promise<{ instanceId: string }> }) {
   try {
     const requestStartTime = Date.now();
+    const timingBreakdown: any = {};
     const { instanceId } = await params;
     const body = await req.json();
     const { chatId, text, replyToMsgId } = body;
@@ -18,15 +20,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
       return NextResponse.json({ error: 'chatId and text are required' }, { status: 400 });
     }
 
-    const instance = await prisma.instance.findUnique({ where: { id: instanceId } });
+    timingBreakdown.authMs = Date.now() - requestStartTime;
+
+    const tPrismaStart = Date.now();
+    const instance = await getCachedInstance(instanceId);
     if (!instance) return NextResponse.json({ error: 'Instance not found' }, { status: 404 });
 
-    const settings = await prisma.instanceSettings.findUnique({ where: { instanceId } });
+    const tSettingsStart = Date.now();
+    const settings = await getCachedInstanceSettings(instanceId);
     if (!settings || !settings.elevenLabsApiKey || !settings.elevenLabsVoiceId) {
       return NextResponse.json({ error: 'ElevenLabs is not fully configured for this instance (API Key or Voice ID is missing)' }, { status: 400 });
     }
 
+    const tProviderStart = Date.now();
     const provider = await ProviderFactory.getProvider(instance);
+    timingBreakdown.providerMs = Date.now() - tProviderStart;
+    timingBreakdown.prismaMs = Date.now() - tPrismaStart - timingBreakdown.providerMs;
 
     // Generate Audio via ElevenLabs
     const tEl = Date.now();
@@ -62,7 +71,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
       const totalTimingMs = Date.now() - requestStartTime;
       const total = elevenLabsMs + simulationMs + telegramSendMs;
       const messages = [{ success: true, id: message.id, timing: { elevenLabsMs, simulationMs, telegramSendMs, totalActionMs: total, totalTimingMs: total, totalMs: total } }];
-      return NextResponse.json({ success: true, totalTimingMs, messages });
+      return NextResponse.json({ success: true, totalTimingMs, timingBreakdown, messages });
     } finally {
       // Cleanup temp file
       if (fs.existsSync(tempPath)) {

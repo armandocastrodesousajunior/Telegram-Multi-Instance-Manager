@@ -3,8 +3,9 @@ import { prisma } from '../db';
 
 const LOG_PREFIX = '[TG-EntityResolver]';
 
-// ── Cache em Memória RAM para InstanceSettings (TTL: 30s) ───────────────────
+// ── Cache em Memória RAM para InstanceSettings e Instance (TTL: 30s) ────────
 const settingsCache = new Map<string, { data: any; expiresAt: number }>();
+const instanceCache = new Map<string, { data: any; expiresAt: number }>();
 
 export async function getCachedInstanceSettings(instanceId: string): Promise<any> {
   const now = Date.now();
@@ -19,8 +20,22 @@ export async function getCachedInstanceSettings(instanceId: string): Promise<any
   return settings;
 }
 
+export async function getCachedInstance(instanceId: string): Promise<any> {
+  const now = Date.now();
+  const cached = instanceCache.get(instanceId);
+  if (cached && cached.expiresAt > now) {
+    return cached.data;
+  }
+  const instance = await prisma.instance.findUnique({ where: { id: instanceId } });
+  if (instance) {
+    instanceCache.set(instanceId, { data: instance, expiresAt: now + 30000 }); // 30s TTL
+  }
+  return instance;
+}
+
 export function invalidateInstanceSettingsCache(instanceId: string) {
   settingsCache.delete(instanceId);
+  instanceCache.delete(instanceId);
 }
 
 // ── Cache em Memória RAM (Camada 0) para Entidades / Peers (TTL: 1h) ────────

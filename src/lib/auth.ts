@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from './db';
+import { getCachedInstance } from './telegram/utils';
 
 export async function checkAuth(req: NextRequest, instanceId?: string): Promise<boolean> {
   const token = req.headers.get('x-access-token') || req.headers.get('authorization')?.replace('Bearer ', '');
@@ -11,10 +12,7 @@ export async function checkAuth(req: NextRequest, instanceId?: string): Promise<
   // Token da instância específica
   if (instanceId) {
     try {
-      const instance = await prisma.instance.findUnique({
-        where: { id: instanceId },
-        select: { token: true }
-      });
+      const instance = await getCachedInstance(instanceId);
       if (instance && instance.token === token) return true;
     } catch (e) {
       console.error('[checkAuth] Erro ao buscar instância:', e);

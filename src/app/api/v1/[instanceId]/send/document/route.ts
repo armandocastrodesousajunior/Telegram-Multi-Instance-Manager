@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { checkAuth, unauthorizedResponse } from '@/lib/auth';
 import { ProviderFactory } from '@/lib/telegram/providers/ProviderFactory';
 import { getCachedMedia, saveMediaToCache } from '@/lib/telegram/mediaCache';
-import { getOrFetchEntity } from '@/lib/telegram/utils';
+import { getOrFetchEntity, getCachedInstance, getCachedInstanceSettings } from '@/lib/telegram/utils';
 import { prisma } from '@/lib/db';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ instanceId: string }> }) {
@@ -17,6 +17,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
 
   try {
     const requestStartTime = Date.now();
+    const timingBreakdown: any = {};
     const { instanceId } = await params;
     const { chatId, url, caption, replyToMsgId, parseMode } = await req.json();
 
@@ -24,14 +25,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
       return NextResponse.json({ error: 'chatId and url are required' }, { status: 400 });
     }
 
-    const instance = await prisma.instance.findUnique({ where: { id: instanceId } });
+    timingBreakdown.authMs = Date.now() - requestStartTime;
+
+    const tPrismaStart = Date.now();
+    const instance = await getCachedInstance(instanceId);
     if (!instance) return NextResponse.json({ error: 'Instance not found' }, { status: 404 });
+    
+    const tProviderStart = Date.now();
     const provider = await ProviderFactory.getProvider(instance);
+    timingBreakdown.providerMs = Date.now() - tProviderStart;
+    
     const tSim = Date.now();
     await provider.simulateFileAction(chatId, 'document');
     const simulationMs = Date.now() - tSim;
 
-    const settings = await prisma.instanceSettings.findUnique({ where: { instanceId } });
+    const tSettingsStart = Date.now();
+    const settings = await getCachedInstanceSettings(instanceId);
+    timingBreakdown.prismaMs = Date.now() - tPrismaStart - timingBreakdown.providerMs;
     
     let fileData: any = url;
     let cachedMedia = null;
@@ -81,7 +91,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     const totalTimingMs = Date.now() - requestStartTime;
     const total = simulationMs + telegramSendMs;
     const messages = [{ success: true, id: message.id, timing: { simulationMs, telegramSendMs, totalActionMs: total, totalTimingMs: total, totalMs: total, cacheHit: !!cachedMedia } }];
-    return NextResponse.json({ success: true, totalTimingMs, messages });
+    return NextResponse.json({ success: true, totalTimingMs, timingBreakdown, messages });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

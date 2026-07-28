@@ -3,6 +3,7 @@ import { checkAuth, unauthorizedResponse } from '@/lib/auth';
 import { ProviderFactory } from '@/lib/telegram/providers/ProviderFactory';
 import { logApiRequest } from '@/lib/logger';
 import { prisma } from '@/lib/db';
+import { getCachedInstance, getCachedInstanceSettings } from '@/lib/telegram/utils';
 import { getOrFetchEntity } from '@/lib/telegram/utils';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ instanceId: string }> }) {
@@ -17,6 +18,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
 
   try {
     const requestStartTime = Date.now();
+    const timingBreakdown: any = {};
     const { instanceId } = await params;
     const body = await req.json();
     const { chatId, text, replyToMsgId, parseMode } = body;
@@ -27,14 +29,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
       return NextResponse.json(err, { status: 400 });
     }
 
-    const instance = await prisma.instance.findUnique({ where: { id: instanceId } });
+    timingBreakdown.authMs = Date.now() - requestStartTime;
+
+    const tPrismaStart = Date.now();
+    const instance = await getCachedInstance(instanceId);
     if (!instance) return NextResponse.json({ error: 'Instance not found' }, { status: 404 });
-    const provider = await ProviderFactory.getProvider(instance);
     
-    // Fetch instance settings to check for split messages option
-    const settings = await prisma.instanceSettings.findUnique({
-      where: { instanceId }
-    });
+    const tProviderStart = Date.now();
+    const provider = await ProviderFactory.getProvider(instance);
+    timingBreakdown.providerMs = Date.now() - tProviderStart;
+    
+    // Fetch instance settings for splitting option
+    const tSettingsStart = Date.now();
+    const settings = await getCachedInstanceSettings(instanceId);
+    timingBreakdown.prismaMs = Date.now() - tPrismaStart - timingBreakdown.providerMs;
     
     const splitEnabled = settings ? settings.splitMessagesEnabled : true;
     let resData: any;
@@ -67,7 +75,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
         id,
         timing: actions[index] || {}
       }));
-      resData = { success: true, totalTimingMs: totalRequestMs, messages };
+      resData = { success: true, totalTimingMs: totalRequestMs, timingBreakdown, messages };
     } else {
       // Normal behavior
       const tSim = Date.now();
@@ -95,7 +103,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
           timing: { simulationMs, telegramSendMs, peerResolution: simResult.peerResolution, totalActionMs: total, totalTimingMs: total, totalMs: total }
         }
       ];
-      resData = { success: true, totalTimingMs: totalRequestMs, messages };
+      resData = { success: true, totalTimingMs: totalRequestMs, timingBreakdown, messages };
     }
     await logApiRequest({ instanceId, endpoint: '/send/text', method: 'POST', requestBody: body, responseStatus: 200, responseBody: resData, success: true });
     return NextResponse.json(resData);

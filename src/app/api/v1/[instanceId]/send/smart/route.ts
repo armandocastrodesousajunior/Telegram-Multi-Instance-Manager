@@ -10,7 +10,7 @@ import path from 'path';
 import os from 'os';
 import crypto from 'crypto';
 import { getCachedMedia, saveMediaToCache } from '@/lib/telegram/mediaCache';
-import { getOrFetchEntity } from '@/lib/telegram/utils';
+import { getOrFetchEntity, getCachedInstance, getCachedInstanceSettings } from '@/lib/telegram/utils';
 import { sendViewOnceFile } from '@/lib/telegram/viewOnce';
 import { generateAudio } from '@/lib/elevenlabs/client';
 
@@ -53,7 +53,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     timingBreakdown.authMs = Date.now() - requestStartTime;
 
     const tPrismaStart = Date.now();
-    const instance = await prisma.instance.findUnique({ where: { id: instanceId } });
+    const instance = await getCachedInstance(instanceId);
     if (!instance) return NextResponse.json({ error: 'Instance not found' }, { status: 404 });
     
     const tProviderStart = Date.now();
@@ -61,9 +61,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     timingBreakdown.providerMs = Date.now() - tProviderStart;
     
     const tSettingsStart = Date.now();
-    const settings = await prisma.instanceSettings.findUnique({
-      where: { instanceId }
-    });
+    const settings = await getCachedInstanceSettings(instanceId);
     timingBreakdown.prismaMs = Date.now() - tPrismaStart - timingBreakdown.providerMs;
     
     const splitEnabled = settings ? settings.splitMessagesEnabled : true;
