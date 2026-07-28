@@ -38,6 +38,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
 
   try {
     const requestStartTime = Date.now();
+    const timingBreakdown: any = {};
     const stageTimings: any = { stage1PrefetchMs: 0, stage2ExecutionMs: 0, actions: [] };
     const { instanceId } = await params;
     const body = await req.json();
@@ -49,14 +50,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
       return NextResponse.json(err, { status: 400 });
     }
 
+    timingBreakdown.authMs = Date.now() - requestStartTime;
+
+    const tPrismaStart = Date.now();
     const instance = await prisma.instance.findUnique({ where: { id: instanceId } });
     if (!instance) return NextResponse.json({ error: 'Instance not found' }, { status: 404 });
-    const provider = await ProviderFactory.getProvider(instance);
     
-    // Fetch instance settings to check for split messages option
+    const tProviderStart = Date.now();
+    const provider = await ProviderFactory.getProvider(instance);
+    timingBreakdown.providerMs = Date.now() - tProviderStart;
+    
+    const tSettingsStart = Date.now();
     const settings = await prisma.instanceSettings.findUnique({
       where: { instanceId }
     });
+    timingBreakdown.prismaMs = Date.now() - tPrismaStart - timingBreakdown.providerMs;
     
     const splitEnabled = settings ? settings.splitMessagesEnabled : true;
 
@@ -399,6 +407,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     const resData = {
       success: true,
       totalTimingMs: totalRequestMs,
+      timingBreakdown,
       messages
     };
     await logApiRequest({ instanceId, endpoint: '/send/smart', method: 'POST', requestBody: body, responseStatus: 200, responseBody: resData, success: true });
