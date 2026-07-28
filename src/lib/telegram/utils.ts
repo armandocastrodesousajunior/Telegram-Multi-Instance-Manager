@@ -7,6 +7,10 @@ const LOG_PREFIX = '[TG-EntityResolver]';
 const settingsCache = new Map<string, { data: any; expiresAt: number }>();
 const instanceCache = new Map<string, { data: any; expiresAt: number }>();
 
+function getCacheTtl(): number {
+  return parseInt(process.env.INSTANCE_CACHE_TTL_MS || '60000', 10);
+}
+
 export async function getCachedInstanceSettings(instanceId: string): Promise<any> {
   const now = Date.now();
   const cached = settingsCache.get(instanceId);
@@ -15,7 +19,7 @@ export async function getCachedInstanceSettings(instanceId: string): Promise<any
   }
   const settings = await prisma.instanceSettings.findUnique({ where: { instanceId } });
   if (settings) {
-    settingsCache.set(instanceId, { data: settings, expiresAt: now + 30000 }); // 30s TTL
+    settingsCache.set(instanceId, { data: settings, expiresAt: now + getCacheTtl() });
   }
   return settings;
 }
@@ -28,7 +32,7 @@ export async function getCachedInstance(instanceId: string): Promise<any> {
   }
   const instance = await prisma.instance.findUnique({ where: { id: instanceId } });
   if (instance) {
-    instanceCache.set(instanceId, { data: instance, expiresAt: now + 30000 }); // 30s TTL
+    instanceCache.set(instanceId, { data: instance, expiresAt: now + getCacheTtl() });
   }
   return instance;
 }

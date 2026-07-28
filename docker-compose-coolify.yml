@@ -33,6 +33,7 @@ services:
       - WORKER_POOL_SIZE=6
       - WORKER_JOB_TIMEOUT_MS=30000
       - SIMULATION_MAX_MS=15000
+      - INSTANCE_CACHE_TTL_MS=60000
 
 volumes:
   postgres_data:

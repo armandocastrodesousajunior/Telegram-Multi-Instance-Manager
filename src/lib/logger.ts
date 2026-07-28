@@ -27,8 +27,10 @@ export async function logApiRequest(data: {
       }
     });
 
-    // Cleanup old logs asynchronously
-    cleanupApiLogs(data.instanceId).catch(err => console.error("Failed to cleanup API logs", err));
+    // Cleanup old logs asynchronously apenas em ~1% das requisições para poupar o Prisma
+    if (Math.random() < 0.01) {
+      cleanupApiLogs(data.instanceId).catch(err => console.error("Failed to cleanup API logs", err));
+    }
   } catch (err) {
     console.error("Failed to log API request:", err);
   }
@@ -58,8 +60,10 @@ export async function logWebhookEvent(data: {
       }
     });
 
-    // Cleanup old logs asynchronously
-    cleanupWebhookLogs(data.instanceId).catch(err => console.error("Failed to cleanup Webhook logs", err));
+    // Cleanup old logs asynchronously apenas em ~1% das requisições para poupar o Prisma
+    if (Math.random() < 0.01) {
+      cleanupWebhookLogs(data.instanceId).catch(err => console.error("Failed to cleanup Webhook logs", err));
+    }
   } catch (err) {
     console.error("Failed to log Webhook event:", err);
   }
