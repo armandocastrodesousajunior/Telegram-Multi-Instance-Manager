@@ -1,6 +1,7 @@
 import { Instance } from '@prisma/client';
 import { ITelegramProvider, MediaOptions, MessageOptions, ViewOnceOptions } from './IProvider';
 import { prisma } from '../../db';
+import { getCachedInstanceSettings } from '../utils';
 import fs from 'fs';
 import path from 'path';
 
@@ -216,7 +217,7 @@ export class BotApiProvider implements ITelegramProvider {
   }
 
   async simulateTyping(chatId: string | number, textOrDuration?: string | number): Promise<void> {
-    const settings = await prisma.instanceSettings.findUnique({ where: { instanceId: this.instance.id } });
+    const settings = await getCachedInstanceSettings(this.instance.id);
     if (!settings || !settings.typingEnabled) return;
 
     let duration = 0;
@@ -230,20 +231,27 @@ export class BotApiProvider implements ITelegramProvider {
       duration = (settings.typingFixedSeconds || 5) * 1000;
     }
     
-    duration = Math.min(duration, 30000);
+    // Teto de segurança (Cap): máximo 15s para não prender a fila do worker em textos gigantes
+    duration = Math.min(duration, 15000);
 
     if (duration > 0) {
-      // Telegram bot actions last for 5 seconds or until a message is sent.
       try {
-        await this.callApi('sendChatAction', { chat_id: chatId, action: 'typing' });
-        // We could loop, but for simplicity we sleep
-        await new Promise(r => setTimeout(r, Math.min(duration, 5000)));
+        const targetEndTime = Date.now() + duration;
+        while (Date.now() < targetEndTime) {
+          // Fire-and-Forget no HTTP Request
+          this.callApi('sendChatAction', { chat_id: chatId, action: 'typing' }).catch(() => {});
+          
+          const remaining = targetEndTime - Date.now();
+          if (remaining <= 0) break;
+          const sleepTime = Math.min(4000, remaining);
+          await new Promise(r => setTimeout(r, sleepTime));
+        }
       } catch (e) {}
     }
   }
 
   async simulateFileAction(chatId: string | number, action: 'document' | 'photo' | 'video' | 'audio', durationMs?: number): Promise<void> {
-    const settings = await prisma.instanceSettings.findUnique({ where: { instanceId: this.instance.id } });
+    const settings = await getCachedInstanceSettings(this.instance.id);
     if (!settings) return;
 
     let botAction = '';
@@ -259,10 +267,21 @@ export class BotApiProvider implements ITelegramProvider {
       botAction = 'upload_document';
     }
 
+    // Teto de segurança: máximo 15s
+    duration = Math.min(duration, 15000);
+
     if (botAction) {
       try {
-        await this.callApi('sendChatAction', { chat_id: chatId, action: botAction });
-        await new Promise(r => setTimeout(r, Math.min(duration, 5000)));
+        const targetEndTime = Date.now() + duration;
+        while (Date.now() < targetEndTime) {
+          // Fire-and-Forget
+          this.callApi('sendChatAction', { chat_id: chatId, action: botAction }).catch(() => {});
+          
+          const remaining = targetEndTime - Date.now();
+          if (remaining <= 0) break;
+          const sleepTime = Math.min(4000, remaining);
+          await new Promise(r => setTimeout(r, sleepTime));
+        }
       } catch (e) {}
     }
   }

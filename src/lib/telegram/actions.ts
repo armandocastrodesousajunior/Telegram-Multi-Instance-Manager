@@ -1,10 +1,9 @@
 import { TelegramClient } from 'telegram';
 import { Api } from 'telegram';
-import { prisma } from '../db';
-import { getOrFetchEntity } from './utils';
+import { getOrFetchEntity, getCachedInstanceSettings } from './utils';
 
 export async function simulateTyping(client: TelegramClient, instanceId: string, chatId: string, textOrDuration?: string | number) {
-  const settings = await prisma.instanceSettings.findUnique({ where: { instanceId } });
+  const settings = await getCachedInstanceSettings(instanceId);
   if (!settings || !settings.typingEnabled) return;
 
   let duration = 0;
@@ -18,19 +17,24 @@ export async function simulateTyping(client: TelegramClient, instanceId: string,
     duration = (settings.typingFixedSeconds || 5) * 1000;
   }
   
-  duration = Math.min(duration, 30000); // Max 30s
+  // Teto de segurança (Cap): máximo 15s para não prender a fila do worker em textos gigantes
+  duration = Math.min(duration, 15000);
   
   if (duration > 0) {
     try {
       const peer = await getOrFetchEntity(client, chatId);
       const action = new Api.SendMessageTypingAction();
       
-      let elapsed = 0;
-      while (elapsed < duration) {
-        await client.invoke(new Api.messages.SetTyping({ peer, action }));
-        const sleepTime = Math.min(4000, duration - elapsed);
+      const targetEndTime = Date.now() + duration;
+      
+      while (Date.now() < targetEndTime) {
+        // Disparo não-bloqueante (Fire-and-Forget): não espera ACK do TCP socket do GramJS
+        client.invoke(new Api.messages.SetTyping({ peer, action })).catch(() => {});
+        
+        const remaining = targetEndTime - Date.now();
+        if (remaining <= 0) break;
+        const sleepTime = Math.min(4000, remaining);
         await new Promise(resolve => setTimeout(resolve, sleepTime));
-        elapsed += sleepTime;
       }
     } catch (err) {
       console.error('Failed to simulate typing:', err);
@@ -39,7 +43,7 @@ export async function simulateTyping(client: TelegramClient, instanceId: string,
 }
 
 export async function simulateFileAction(client: TelegramClient, instanceId: string, chatId: string, actionType: 'audio' | 'video' | 'photo' | 'document', realDurationMs?: number) {
-  const settings = await prisma.instanceSettings.findUnique({ where: { instanceId } });
+  const settings = await getCachedInstanceSettings(instanceId);
   if (!settings) return;
 
   let enabled = false;
@@ -57,7 +61,6 @@ export async function simulateFileAction(client: TelegramClient, instanceId: str
   } else if (actionType === 'photo' && settings.photoActionEnabled) {
     enabled = true;
     duration = settings.photoFixedSeconds * 1000 || 2000;
-    action = new Api.SendMessageChooseContactAction(); // GramJS mapping? Actually SendMessageUploadPhotoAction
     action = new Api.SendMessageUploadPhotoAction({ progress: 1 });
   } else if (actionType === 'document' && settings.documentActionEnabled) {
     enabled = true;
@@ -65,19 +68,27 @@ export async function simulateFileAction(client: TelegramClient, instanceId: str
     action = new Api.SendMessageUploadDocumentAction({ progress: 1 });
   }
 
+  // Teto de segurança: máximo 15s
+  duration = Math.min(duration, 15000);
+
   if (enabled && action) {
     try {
       const peer = await getOrFetchEntity(client, chatId);
       
-      let elapsed = 0;
-      while (elapsed < duration) {
-        await client.invoke(new Api.messages.SetTyping({ peer, action }));
-        const sleepTime = Math.min(4000, duration - elapsed);
+      const targetEndTime = Date.now() + duration;
+      
+      while (Date.now() < targetEndTime) {
+        // Fire-and-Forget
+        client.invoke(new Api.messages.SetTyping({ peer, action: action! })).catch(() => {});
+        
+        const remaining = targetEndTime - Date.now();
+        if (remaining <= 0) break;
+        const sleepTime = Math.min(4000, remaining);
         await new Promise(resolve => setTimeout(resolve, sleepTime));
-        elapsed += sleepTime;
       }
     } catch (err) {
       console.error('Failed to simulate file action:', err);
     }
   }
 }
+
