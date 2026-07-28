@@ -236,8 +236,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
 
         if (action.type === 'text') {
           const tSim = Date.now();
-          await provider.simulateTyping(chatId, action.text);
+          const simResult = await provider.simulateTyping(chatId, action.text);
           actionTimings.simulationMs = Date.now() - tSim;
+          actionTimings.peerResolution = simResult.peerResolution;
 
           const tSend = Date.now();
           const msg = await provider.sendMessage(chatId, action.text!, {
@@ -266,8 +267,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
           console.log(`[SmartRoute] Processando ação: type=${action.type} isViewOnce=${isViewOnce} url=${action.url}`);
 
           const tSim = Date.now();
-          await provider.simulateFileAction(chatId, simAction, action.prefetchedDuration || 0);
+          const simResult = await provider.simulateFileAction(chatId, simAction, action.prefetchedDuration || 0);
           actionTimings.simulationMs = Date.now() - tSim;
+          actionTimings.peerResolution = simResult.peerResolution;
 
           // ── View Once: usa API de baixo nível (sem tocar em client.invoke) ──
           if (isViewOnce) {

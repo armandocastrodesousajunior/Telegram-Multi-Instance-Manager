@@ -1,10 +1,23 @@
 import { TelegramClient } from 'telegram';
 import { Api } from 'telegram';
-import { getOrFetchEntity, getCachedInstanceSettings } from './utils';
+import { getOrFetchEntity, getCachedInstanceSettings, PeerResolution } from './utils';
 
-export async function simulateTyping(client: TelegramClient, instanceId: string, chatId: string, textOrDuration?: string | number) {
+export interface SimulationResult {
+  peerResolution: PeerResolution;
+  simulationMs: number;
+}
+
+export async function simulateTyping(client: TelegramClient, instanceId: string, chatId: string, textOrDuration?: string | number): Promise<SimulationResult> {
   const settings = await getCachedInstanceSettings(instanceId);
-  if (!settings || !settings.typingEnabled) return;
+
+  // Peer resolution sem simulação (skip silencioso se digitação desativada)
+  const tPeer = Date.now();
+  const { entity: peer, resolution: peerResolution } = await getOrFetchEntity(client, chatId);
+  const peerResolveMs = Date.now() - tPeer;
+
+  if (!settings || !settings.typingEnabled) {
+    return { peerResolution, simulationMs: 0 };
+  }
 
   let duration = 0;
   if (typeof textOrDuration === 'number') {
@@ -16,35 +29,40 @@ export async function simulateTyping(client: TelegramClient, instanceId: string,
   } else {
     duration = (settings.typingFixedSeconds || 5) * 1000;
   }
-  
-  // Teto de segurança (Cap): máximo 15s para não prender a fila do worker em textos gigantes
+
+  // Teto de segurança (Cap): máximo 15s
   duration = Math.min(duration, 15000);
-  
+
+  const tSim = Date.now();
   if (duration > 0) {
     try {
-      const peer = await getOrFetchEntity(client, chatId);
       const action = new Api.SendMessageTypingAction();
-      
       const targetEndTime = Date.now() + duration;
-      
+
       while (Date.now() < targetEndTime) {
-        // Disparo não-bloqueante (Fire-and-Forget): não espera ACK do TCP socket do GramJS
+        // Fire-and-Forget: não espera ACK do socket TCP do GramJS
         client.invoke(new Api.messages.SetTyping({ peer, action })).catch(() => {});
-        
         const remaining = targetEndTime - Date.now();
         if (remaining <= 0) break;
-        const sleepTime = Math.min(4000, remaining);
-        await new Promise(resolve => setTimeout(resolve, sleepTime));
+        await new Promise(resolve => setTimeout(resolve, Math.min(4000, remaining)));
       }
     } catch (err) {
       console.error('Failed to simulate typing:', err);
     }
   }
+
+  return { peerResolution, simulationMs: Date.now() - tSim };
 }
 
-export async function simulateFileAction(client: TelegramClient, instanceId: string, chatId: string, actionType: 'audio' | 'video' | 'photo' | 'document', realDurationMs?: number) {
+export async function simulateFileAction(client: TelegramClient, instanceId: string, chatId: string, actionType: 'audio' | 'video' | 'photo' | 'document', realDurationMs?: number): Promise<SimulationResult> {
   const settings = await getCachedInstanceSettings(instanceId);
-  if (!settings) return;
+
+  const tPeer = Date.now();
+  const { entity: peer, resolution: peerResolution } = await getOrFetchEntity(client, chatId);
+
+  if (!settings) {
+    return { peerResolution, simulationMs: 0 };
+  }
 
   let enabled = false;
   let duration = 2000;
@@ -71,24 +89,23 @@ export async function simulateFileAction(client: TelegramClient, instanceId: str
   // Teto de segurança: máximo 15s
   duration = Math.min(duration, 15000);
 
+  const tSim = Date.now();
   if (enabled && action) {
     try {
-      const peer = await getOrFetchEntity(client, chatId);
-      
       const targetEndTime = Date.now() + duration;
-      
       while (Date.now() < targetEndTime) {
         // Fire-and-Forget
         client.invoke(new Api.messages.SetTyping({ peer, action: action! })).catch(() => {});
-        
         const remaining = targetEndTime - Date.now();
         if (remaining <= 0) break;
-        const sleepTime = Math.min(4000, remaining);
-        await new Promise(resolve => setTimeout(resolve, sleepTime));
+        await new Promise(resolve => setTimeout(resolve, Math.min(4000, remaining)));
       }
     } catch (err) {
       console.error('Failed to simulate file action:', err);
     }
   }
+
+  return { peerResolution, simulationMs: Date.now() - tSim };
 }
+
 

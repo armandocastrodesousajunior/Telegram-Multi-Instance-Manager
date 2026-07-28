@@ -54,15 +54,23 @@ export function parseChatId(chatId: string | number): bigint | string {
   return chatId;
 }
 
+
+export interface PeerResolution {
+  layerHit: 0 | 1 | 2 | 3;
+  layerName: 'RAM Cache' | 'GramJS Cache' | 'Telegram API' | 'Dialogs Reload';
+  resolveMs: number;
+}
+
 /**
- * Resolve a entidade de um chatId com 4 camadas de fallback, com logs detalhados.
+ * Resolve a entidade de um chatId com 4 camadas de fallback.
+ * Retorna a entidade + telemetria de qual camada foi usada e quanto tempo levou.
  *
  * Camada 0: RAM Cache local do JS (instantâneo, < 0.01ms, sem travar GramJS)
  * Camada 1: getInputEntity() — cache interno da GramJS
  * Camada 2: getEntity()      — busca via API do Telegram (online, ~200ms)
  * Camada 3: getDialogs(200) + getInputEntity() — recarga completa do cache
  */
-export async function getOrFetchEntity(client: TelegramClient, chatId: string | number): Promise<any> {
+export async function getOrFetchEntity(client: TelegramClient, chatId: string | number): Promise<{ entity: any; resolution: PeerResolution }> {
   const parsed = parseChatId(chatId);
   const parsedType = typeof parsed === 'bigint' ? 'BigInt' : 'string';
   const key = chatId.toString();
@@ -72,49 +80,56 @@ export async function getOrFetchEntity(client: TelegramClient, chatId: string | 
   // ── Camada 0: Cache na memória RAM do JS ──────────────────────────────────
   const cached = map.get(key);
   if (cached && cached.expiresAt > now) {
-    return cached.entity;
+    return {
+      entity: cached.entity,
+      resolution: { layerHit: 0, layerName: 'RAM Cache', resolveMs: 0 }
+    };
   }
 
   console.log(`${LOG_PREFIX} Resolvendo chatId=${chatId} (tipo=${parsedType}, valor=${parsed.toString()})`);
 
   // ── Camada 1: cache local GramJS ──────────────────────────────────────────
+  const t1 = Date.now();
   try {
     const entity = await client.getInputEntity(parsed as any);
-    console.log(`${LOG_PREFIX} ✅ [Camada 1 - Cache] chatId=${chatId} resolvido: className=${(entity as any)?.className}`);
+    const resolveMs = Date.now() - t1;
+    console.log(`${LOG_PREFIX} ✅ [Camada 1 - GramJS Cache] chatId=${chatId} resolvido em ${resolveMs}ms`);
     map.set(key, { entity, expiresAt: now + 3600000 }); // Salva na RAM por 1h
-    return entity;
+    return { entity, resolution: { layerHit: 1, layerName: 'GramJS Cache', resolveMs } };
   } catch (err1: any) {
     const isEntityErr = err1.message?.includes('Could not find the input entity') || err1.message?.includes('No entity found');
-    console.warn(`${LOG_PREFIX} ⚠️ [Camada 1 - Cache] Falhou para chatId=${chatId}. isEntityError=${isEntityErr}. Erro: ${err1.message}`);
-    if (!isEntityErr) throw err1; // Erro diferente — propaga imediatamente
+    console.warn(`${LOG_PREFIX} ⚠️ [Camada 1 - GramJS Cache] Falhou para chatId=${chatId} em ${Date.now() - t1}ms. Erro: ${err1.message}`);
+    if (!isEntityErr) throw err1;
   }
 
   // ── Camada 2: getEntity() (API online) ───────────────────────────────────
-  console.log(`${LOG_PREFIX} [Camada 2 - API] Chamando getEntity(${parsed.toString()})...`);
+  console.log(`${LOG_PREFIX} [Camada 2 - Telegram API] Chamando getEntity(${parsed.toString()})...`);
+  const t2 = Date.now();
   try {
     const entity = await client.getEntity(parsed as any);
-    console.log(`${LOG_PREFIX} ✅ [Camada 2 - API] chatId=${chatId} resolvido: className=${(entity as any)?.className} id=${(entity as any)?.id}`);
+    const resolveMs = Date.now() - t2;
+    console.log(`${LOG_PREFIX} ✅ [Camada 2 - Telegram API] chatId=${chatId} resolvido em ${resolveMs}ms`);
     map.set(key, { entity, expiresAt: now + 3600000 });
-    return entity;
+    return { entity, resolution: { layerHit: 2, layerName: 'Telegram API', resolveMs } };
   } catch (err2: any) {
     const isEntityErr = err2.message?.includes('Could not find the input entity') || err2.message?.includes('No entity found');
-    console.warn(`${LOG_PREFIX} ⚠️ [Camada 2 - API] Falhou para chatId=${chatId}. isEntityError=${isEntityErr}. Erro: ${err2.message}`);
+    console.warn(`${LOG_PREFIX} ⚠️ [Camada 2 - Telegram API] Falhou para chatId=${chatId} em ${Date.now() - t2}ms. Erro: ${err2.message}`);
     if (!isEntityErr) throw err2;
   }
 
   // ── Camada 3: getDialogs(200) + retry ────────────────────────────────────
-  console.log(`${LOG_PREFIX} [Camada 3 - Contingência] Recarregando 200 diálogos para resolver chatId=${chatId}...`);
-  console.log(`${LOG_PREFIX} [Camada 3] ATENÇÃO: Esta camada simula o efeito do restart do servidor.`);
+  console.log(`${LOG_PREFIX} [Camada 3 - Dialogs Reload] Recarregando 200 diálogos para resolver chatId=${chatId}...`);
+  const t3 = Date.now();
   try {
     const dialogs = await client.getDialogs({ limit: 200 });
     console.log(`${LOG_PREFIX} [Camada 3] getDialogs() retornou ${dialogs.length} diálogos. Tentando getInputEntity novamente...`);
-
     const entity = await client.getInputEntity(parsed as any);
-    console.log(`${LOG_PREFIX} ✅ [Camada 3 - Contingência] chatId=${chatId} resolvido após recarregar diálogos: className=${(entity as any)?.className}`);
+    const resolveMs = Date.now() - t3;
+    console.log(`${LOG_PREFIX} ✅ [Camada 3 - Dialogs Reload] chatId=${chatId} resolvido em ${resolveMs}ms após recarregar diálogos`);
     map.set(key, { entity, expiresAt: now + 3600000 });
-    return entity;
+    return { entity, resolution: { layerHit: 3, layerName: 'Dialogs Reload', resolveMs } };
   } catch (err3: any) {
-    console.error(`${LOG_PREFIX} ❌ [Camada 3 - Contingência] FALHA TOTAL para chatId=${chatId}. Erro: ${err3.message}`);
+    console.error(`${LOG_PREFIX} ❌ [Camada 3 - Dialogs Reload] FALHA TOTAL para chatId=${chatId} em ${Date.now() - t3}ms. Erro: ${err3.message}`);
     console.error(`${LOG_PREFIX} ❌ Diagnóstico: o usuário ${chatId} não está nos últimos 200 diálogos e não foi encontrado na API.`);
     console.error(`${LOG_PREFIX} ❌ Verifique se o chatId está correto e se o número de telefone já iniciou uma conversa com esta instância.`);
     throw err3;

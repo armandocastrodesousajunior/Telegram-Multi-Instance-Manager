@@ -1,5 +1,6 @@
 import { Instance } from '@prisma/client';
 import { ITelegramProvider, MediaOptions, MessageOptions, ViewOnceOptions } from './IProvider';
+import { SimulationResult } from '../actions';
 import { prisma } from '../../db';
 import { getCachedInstanceSettings } from '../utils';
 import fs from 'fs';
@@ -216,9 +217,10 @@ export class BotApiProvider implements ITelegramProvider {
     return { id: msgId, nativeMessage: result };
   }
 
-  async simulateTyping(chatId: string | number, textOrDuration?: string | number): Promise<void> {
+  async simulateTyping(chatId: string | number, textOrDuration?: string | number): Promise<SimulationResult> {
     const settings = await getCachedInstanceSettings(this.instance.id);
-    if (!settings || !settings.typingEnabled) return;
+    const botPeerResolution = { layerHit: -1 as any, layerName: 'Bot HTTP API' as any, resolveMs: 0 };
+    if (!settings || !settings.typingEnabled) return { peerResolution: botPeerResolution, simulationMs: 0 };
 
     let duration = 0;
     if (typeof textOrDuration === 'number') {
@@ -230,33 +232,35 @@ export class BotApiProvider implements ITelegramProvider {
     } else {
       duration = (settings.typingFixedSeconds || 5) * 1000;
     }
-    
-    // Teto de segurança (Cap): máximo 15s para não prender a fila do worker em textos gigantes
+
+    // Teto de segurança (Cap): máximo 15s
     duration = Math.min(duration, 15000);
 
+    const tSim = Date.now();
     if (duration > 0) {
       try {
         const targetEndTime = Date.now() + duration;
         while (Date.now() < targetEndTime) {
           // Fire-and-Forget no HTTP Request
           this.callApi('sendChatAction', { chat_id: chatId, action: 'typing' }).catch(() => {});
-          
           const remaining = targetEndTime - Date.now();
           if (remaining <= 0) break;
-          const sleepTime = Math.min(4000, remaining);
-          await new Promise(r => setTimeout(r, sleepTime));
+          await new Promise(r => setTimeout(r, Math.min(4000, remaining)));
         }
       } catch (e) {}
     }
+
+    return { peerResolution: botPeerResolution, simulationMs: Date.now() - tSim };
   }
 
-  async simulateFileAction(chatId: string | number, action: 'document' | 'photo' | 'video' | 'audio', durationMs?: number): Promise<void> {
+  async simulateFileAction(chatId: string | number, action: 'document' | 'photo' | 'video' | 'audio', durationMs?: number): Promise<SimulationResult> {
     const settings = await getCachedInstanceSettings(this.instance.id);
-    if (!settings) return;
+    const botPeerResolution = { layerHit: -1 as any, layerName: 'Bot HTTP API' as any, resolveMs: 0 };
+    if (!settings) return { peerResolution: botPeerResolution, simulationMs: 0 };
 
     let botAction = '';
     let duration = durationMs || 2000;
-    
+
     if (action === 'audio' && settings.audioActionEnabled) {
       botAction = 'record_voice';
     } else if (action === 'video' && settings.videoActionEnabled) {
@@ -270,19 +274,20 @@ export class BotApiProvider implements ITelegramProvider {
     // Teto de segurança: máximo 15s
     duration = Math.min(duration, 15000);
 
+    const tSim = Date.now();
     if (botAction) {
       try {
         const targetEndTime = Date.now() + duration;
         while (Date.now() < targetEndTime) {
           // Fire-and-Forget
           this.callApi('sendChatAction', { chat_id: chatId, action: botAction }).catch(() => {});
-          
           const remaining = targetEndTime - Date.now();
           if (remaining <= 0) break;
-          const sleepTime = Math.min(4000, remaining);
-          await new Promise(r => setTimeout(r, sleepTime));
+          await new Promise(r => setTimeout(r, Math.min(4000, remaining)));
         }
       } catch (e) {}
     }
+
+    return { peerResolution: botPeerResolution, simulationMs: Date.now() - tSim };
   }
 }

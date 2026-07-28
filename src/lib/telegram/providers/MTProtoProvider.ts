@@ -18,7 +18,7 @@ export class MTProtoProvider implements ITelegramProvider {
 
   async sendMessage(chatId: string | number, text: string, options?: MessageOptions) {
     const client = await telegramManager.getClient(this.instance.id);
-    const peer = await getOrFetchEntity(client, chatId);
+    const { entity: peer } = await getOrFetchEntity(client, chatId);
     const msg = await client.sendMessage(peer, {
       message: text,
       replyTo: options?.replyToMsgId,
@@ -29,7 +29,7 @@ export class MTProtoProvider implements ITelegramProvider {
 
   async sendFile(chatId: string | number, file: string | Buffer | any, options?: MediaOptions) {
     const client = await telegramManager.getClient(this.instance.id);
-    const peer = await getOrFetchEntity(client, chatId);
+    const { entity: peer } = await getOrFetchEntity(client, chatId);
     const msg = await client.sendFile(peer, {
       file: file,
       caption: options?.caption || '',
@@ -44,7 +44,7 @@ export class MTProtoProvider implements ITelegramProvider {
 
   async sendViewOnceFile(chatId: string | number, tempPath: string, mediaType: 'photo' | 'video', options?: ViewOnceOptions) {
     const client = await telegramManager.getClient(this.instance.id);
-    const peer = await getOrFetchEntity(client, chatId);
+    const { entity: peer } = await getOrFetchEntity(client, chatId);
     const msg = await sendViewOnceFile(client, peer, {
       tempPath,
       mediaType,
@@ -56,13 +56,13 @@ export class MTProtoProvider implements ITelegramProvider {
     return { id: msg.id, nativeMessage: msg };
   }
 
-  async simulateTyping(chatId: string | number, textOrDuration?: string | number): Promise<void> {
+  async simulateTyping(chatId: string | number, textOrDuration?: string | number) {
     const client = await telegramManager.getClient(this.instance.id);
-    await simulateTyping(client, this.instance.id, chatId.toString(), textOrDuration); 
+    return simulateTyping(client, this.instance.id, chatId.toString(), textOrDuration);
   }
 
-  async simulateFileAction(chatId: string | number, action: 'document' | 'photo' | 'video' | 'audio', durationMs?: number): Promise<void> {
+  async simulateFileAction(chatId: string | number, action: 'document' | 'photo' | 'video' | 'audio', durationMs?: number) {
     const client = await telegramManager.getClient(this.instance.id);
-    await simulateFileAction(client, this.instance.id, chatId.toString(), action, durationMs);
+    return simulateFileAction(client, this.instance.id, chatId.toString(), action, durationMs);
   }
 }

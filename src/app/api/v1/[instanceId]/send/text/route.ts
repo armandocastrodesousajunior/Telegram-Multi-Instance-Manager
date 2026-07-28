@@ -47,18 +47,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
       for (let i = 0; i < parts.length; i++) {
         const part = parts[i];
         const tSim = Date.now();
-        await provider.simulateTyping(chatId, part);
+        const simResult = await provider.simulateTyping(chatId, part);
         const simulationMs = Date.now() - tSim;
         
         const tSend = Date.now();
         const message = await provider.sendMessage(chatId, part, {
-          replyToMsgId: i === 0 ? replyToMsgId : undefined, // Reply only to the first part
+          replyToMsgId: i === 0 ? replyToMsgId : undefined,
           parseMode: parseMode || undefined
         });
         const telegramSendMs = Date.now() - tSend;
         messageIds.push(message.id);
         const total = simulationMs + telegramSendMs;
-        actions.push({ simulationMs, telegramSendMs, totalActionMs: total, totalTimingMs: total, totalMs: total });
+        actions.push({ simulationMs, telegramSendMs, peerResolution: simResult.peerResolution, totalActionMs: total, totalTimingMs: total, totalMs: total });
       }
       
       const totalRequestMs = Date.now() - requestStartTime;
@@ -71,10 +71,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     } else {
       // Normal behavior
       const tSim = Date.now();
+      let simResult;
       if (body.typingTime) {
-        await provider.simulateTyping(chatId, body.typingTime);
+        simResult = await provider.simulateTyping(chatId, body.typingTime);
       } else {
-        await provider.simulateTyping(chatId, body.text);
+        simResult = await provider.simulateTyping(chatId, body.text);
       }
       const simulationMs = Date.now() - tSim;
 
@@ -91,7 +92,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
         {
           success: true,
           id: message.id,
-          timing: { simulationMs, telegramSendMs, totalActionMs: total, totalTimingMs: total, totalMs: total }
+          timing: { simulationMs, telegramSendMs, peerResolution: simResult.peerResolution, totalActionMs: total, totalTimingMs: total, totalMs: total }
         }
       ];
       resData = { success: true, totalTimingMs: totalRequestMs, messages };

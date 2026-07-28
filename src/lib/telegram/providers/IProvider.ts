@@ -1,7 +1,10 @@
+import { SimulationResult } from '../actions';
+
 export interface MessageOptions {
   replyToMsgId?: number;
   parseMode?: string;
 }
+
 
 export interface MediaOptions extends MessageOptions {
   caption?: string;
@@ -42,10 +45,10 @@ export interface ITelegramProvider {
   /**
    * Simula a ação de digitando
    */
-  simulateTyping(chatId: string | number, textOrDuration?: string | number): Promise<void>;
+  simulateTyping(chatId: string | number, textOrDuration?: string | number): Promise<SimulationResult>;
 
   /**
    * Simula envio de arquivos
    */
-  simulateFileAction(chatId: string | number, action: 'document' | 'photo' | 'video' | 'audio', durationMs?: number): Promise<void>;
+  simulateFileAction(chatId: string | number, action: 'document' | 'photo' | 'video' | 'audio', durationMs?: number): Promise<SimulationResult>;
 }
