@@ -9,6 +9,7 @@ import Link from "next/link";
 import { CreateInstanceModal } from "@/components/CreateInstanceModal";
 import { EditInstanceModal } from "@/components/EditInstanceModal";
 import { DeleteInstanceModal } from "@/components/DeleteInstanceModal";
+import { DuplicateInstanceModal } from "@/components/DuplicateInstanceModal";
 
 export default function Dashboard() {
   const router = useRouter();
@@ -19,6 +20,7 @@ export default function Dashboard() {
   const [showCreate, setShowCreate] = useState(false);
   const [editingInstance, setEditingInstance] = useState<Instance | null>(null);
   const [deletingInstance, setDeletingInstance] = useState<Instance | null>(null);
+  const [duplicatingInstance, setDuplicatingInstance] = useState<Instance | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -96,6 +98,7 @@ export default function Dashboard() {
                 instance={instance} 
                 onEdit={setEditingInstance}
                 onDelete={setDeletingInstance}
+                onDuplicate={setDuplicatingInstance}
               />
             ))}
             {instances.length === 0 && (
@@ -148,6 +151,33 @@ export default function Dashboard() {
               } catch (error: any) {
                 console.error(error);
                 alert(error.message || "Failed to delete instance");
+              }
+            }} 
+          />
+        )}
+        {duplicatingInstance && (
+          <DuplicateInstanceModal 
+            instanceName={duplicatingInstance.name} 
+            onClose={() => setDuplicatingInstance(null)} 
+            onSubmit={async (name) => {
+              try {
+                const res = await fetch(`/api/instances/${duplicatingInstance.id}/duplicate`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                  },
+                  body: JSON.stringify({ name })
+                });
+                if (!res.ok) {
+                  const errorData = await res.json().catch(() => ({}));
+                  throw new Error(errorData.error || "Failed to duplicate instance");
+                }
+                setDuplicatingInstance(null);
+                fetchInstances();
+              } catch (error: any) {
+                console.error(error);
+                alert(error.message || "Failed to duplicate instance");
               }
             }} 
           />

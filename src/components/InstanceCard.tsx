@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, PhoneCall, Edit2, Trash2, Shield } from "lucide-react";
+import { ArrowRight, PhoneCall, Edit2, Trash2, Shield, Copy } from "lucide-react";
 import { StatusBadge } from "./StatusBadge";
 
 export interface Instance {
@@ -20,9 +20,10 @@ interface InstanceCardProps {
   instance: Instance;
   onEdit?: (instance: Instance) => void;
   onDelete?: (instance: Instance) => void;
+  onDuplicate?: (instance: Instance) => void;
 }
 
-export function InstanceCard({ instance, onEdit, onDelete }: InstanceCardProps) {
+export function InstanceCard({ instance, onEdit, onDelete, onDuplicate }: InstanceCardProps) {
   return (
     <div className="glass-card animate-fade-in" style={{ display: "flex", flexDirection: "column", height: "100%", padding: "20px" }}>
       
@@ -34,6 +35,11 @@ export function InstanceCard({ instance, onEdit, onDelete }: InstanceCardProps) 
           {onEdit && (
             <button onClick={() => onEdit(instance)} className="icon-btn" title="Edit name" style={{ padding: "6px", background: "rgba(255,255,255,0.05)", borderRadius: "6px", border: "1px solid var(--glass-border)", cursor: "pointer", color: "var(--text-secondary)", display: "flex", transition: "all 0.2s" }}>
               <Edit2 size={14} />
+            </button>
+          )}
+          {onDuplicate && (
+            <button onClick={() => onDuplicate(instance)} className="icon-btn" title="Duplicate instance" style={{ padding: "6px", background: "rgba(255,255,255,0.05)", borderRadius: "6px", border: "1px solid var(--glass-border)", cursor: "pointer", color: "var(--text-secondary)", display: "flex", transition: "all 0.2s" }}>
+              <Copy size={14} />
             </button>
           )}
           {onDelete && (
