@@ -129,6 +129,40 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
 
   } catch (err: any) {
     console.error('[CallVideoAPI] Erro ao iniciar chamada de vídeo:', err);
+
+    const errMsg = err?.message || '';
+
+    if (errMsg.includes('USER_PRIVACY_RESTRICTED')) {
+      return NextResponse.json(
+        {
+          error: 'O destinatário restringiu o recebimento de chamadas nas configurações de privacidade do Telegram (permite apenas "Meus Contatos" ou "Ninguém").',
+          code: 'USER_PRIVACY_RESTRICTED',
+          hint: 'Para que a chamada seja completada, o destinatário precisa ter o número da instância salvo na agenda/contatos dele, ou alterar em: Configurações > Privacidade e Segurança > Chamadas > "Todos".'
+        },
+        { status: 403 }
+      );
+    }
+
+    if (errMsg.includes('CALL_OCCUPIED') || errMsg.includes('USER_ALREADY_CALLING')) {
+      return NextResponse.json(
+        {
+          error: 'O destinatário já está em outra chamada no momento.',
+          code: 'CALL_OCCUPIED'
+        },
+        { status: 409 }
+      );
+    }
+
+    if (errMsg.includes('USER_IS_BLOCKED')) {
+      return NextResponse.json(
+        {
+          error: 'A conta da instância foi bloqueada pelo destinatário.',
+          code: 'USER_IS_BLOCKED'
+        },
+        { status: 403 }
+      );
+    }
+
     return NextResponse.json(
       { error: err.message || 'Falha interna ao processar chamada', code: 'CALL_INIT_ERROR' },
       { status: 500 }
