@@ -95,8 +95,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     let sentVia = 'instance';
     let messageId: any = null;
 
-    // ── 1. Tentativa de envio via Bot Oficial (Inline Keyboard WebApp) ──────────
-    if (botToken) {
+    // Se o usuário explicitamente pedir para enviar via bot (não é o padrão):
+    if (body.sendAs === 'bot' && botToken) {
       try {
         const botRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: 'POST',
@@ -123,21 +123,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
           sentVia = 'bot';
           messageId = botData.result?.message_id;
         } else {
-          console.warn('[CallAppAPI] Envio via Bot falhou (ex: lead não iniciou bot), fazendo fallback para Conta Pessoal:', botData.description);
+          console.warn('[CallAppAPI] Envio via Bot falhou, usando conta pessoal:', botData.description);
         }
       } catch (botErr: any) {
         console.warn('[CallAppAPI] Erro ao contactar Bot API:', botErr.message);
       }
     }
 
-    // ── 2. Envio via Conta Pessoal (USER) da Instância (Fallback Garantido) ───
+    // ── Envio via Conta Pessoal (USER / Instância) ─────────────────────────────
+    // A própria instância (ex: Sarinha) envia a mensagem e o link diretamente no chat com o lead
     if (!messageId) {
       const provider = await ProviderFactory.getProvider(instance);
       const cleanBtn = buttonText.trim();
       const safeText = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const safeBtn = cleanBtn.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-      // Formatação HTML garantida (sem bugs de escape de colchetes markdown)
+      // Formatação HTML garantida para transformar em link azul clicável na conversa
       const formattedMessage = `${safeText}\n\n👉 <a href="${targetLink}"><b>${safeBtn}</b></a>`;
 
       const result = await provider.sendMessage(chatId, formattedMessage, {
