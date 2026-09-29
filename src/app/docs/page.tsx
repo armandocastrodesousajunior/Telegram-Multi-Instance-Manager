@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { ArrowLeft, Book, Code, Terminal, Play, MessageSquare, Image as ImageIcon, Video, FileText, Mic, Music } from "lucide-react";
+import { ArrowLeft, Book, Code, Terminal, Play, MessageSquare, Image as ImageIcon, Video, FileText, Mic, Music, PhoneCall } from "lucide-react";
 
 export default function DocsPage() {
   const [activeTab, setActiveTab] = useState("text");
@@ -29,9 +29,27 @@ export default function DocsPage() {
     { id: "voice", label: "Send Voice Note", icon: Mic },
     { id: "document", label: "Send Document", icon: FileText },
     { id: "smart", label: "Smart Flow", icon: Play },
+    { id: "call-video", label: "Video Call", icon: PhoneCall },
   ];
 
   const getEndpointData = (id: string) => {
+    if (id === "call-video") {
+      const baseUrl = `${origin}/api/v1/[instanceId]/call/video`;
+      const payloadFields = [
+        { name: "chatId", type: "string | number", description: "The recipient's phone number, username (@), or Telegram chat ID.", required: true },
+        { name: "url", type: "string", description: "Direct URL of the MP4 video to stream during the call.", required: true },
+        { name: "timeoutSeconds", type: "number", description: "Max seconds to ring before considering missed (default: 30).", required: false },
+        { name: "hangupOnVideoEnd", type: "boolean", description: "Automatically hang up when the video playback finishes (default: true).", required: false },
+      ];
+      const exampleJson = {
+        chatId: "@username",
+        url: "https://example.com/pitch.mp4",
+        timeoutSeconds: 30,
+        hangupOnVideoEnd: true
+      };
+      return { baseUrl, payloadFields, exampleJson };
+    }
+
     const baseUrl = `${origin}/api/v1/[instanceId]/send/${id}`;
     const payloadFields: any[] = [
       { name: "chatId", type: "string | number", description: "The recipient's phone number, username (with @), or chat ID.", required: true },

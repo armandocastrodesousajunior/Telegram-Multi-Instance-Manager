@@ -3,6 +3,7 @@ import { dispatchWebhook } from '../webhooks/dispatcher';
 import { Api } from 'telegram';
 import { NewMessageEvent } from 'telegram/events/NewMessage';
 import { EditedMessageEvent } from 'telegram/events/EditedMessage';
+import { callManager } from './calls/CallManager';
 
 const LOG_PREFIX = '[TG-EventHandler]';
 
@@ -178,11 +179,46 @@ export async function handleEditedMessage(instanceId: string, event: EditedMessa
 }
 
 export async function handleRawEvent(instanceId: string, event: Api.TypeUpdate) {
+  // ── Atualizações de Chamadas e Vídeo Ligações (MTProto) ───────────────────
+  if (event.className === 'UpdatePhoneCall') {
+    await callManager.handleCallUpdate(instanceId, (event as any).phoneCall);
+    return;
+  }
+
+  // ── Ações de Usuário (Digitando, Áudio, Foto, Vídeo, Documento) ───────────
   if (event.className === 'UpdateUserTyping' || event.className === 'UpdateChatUserTyping') {
+    const actionName = (event as any).action?.className || '';
+    const userId = (event as any).userId?.toString();
+    const chatId = (event as any).chatId?.toString() || userId;
+
+    // Dispara o evento legado/genérico
     await dispatchWebhook(instanceId, 'typing', {
-      userId: (event as any).userId?.toString(),
-      chatId: (event as any).chatId?.toString() || (event as any).userId?.toString(),
-      action: (event as any).action?.className,
+      userId,
+      chatId,
+      action: actionName,
     });
+
+    // Dispara eventos granulares categorizados
+    if (actionName === 'SendMessageTypingAction') {
+      await dispatchWebhook(instanceId, 'chat.typing', { userId, chatId, action: actionName });
+    } else if (actionName === 'SendMessageRecordAudioAction' || actionName === 'SendMessageUploadAudioAction') {
+      await dispatchWebhook(instanceId, 'chat.recording_audio', { userId, chatId, action: actionName });
+    } else if (actionName === 'SendMessageUploadPhotoAction') {
+      await dispatchWebhook(instanceId, 'chat.uploading_photo', { userId, chatId, action: actionName });
+    } else if (actionName === 'SendMessageUploadVideoAction' || actionName === 'SendMessageRecordVideoAction') {
+      await dispatchWebhook(instanceId, 'chat.uploading_video', { userId, chatId, action: actionName });
+    } else if (actionName === 'SendMessageUploadDocumentAction') {
+      await dispatchWebhook(instanceId, 'chat.uploading_document', { userId, chatId, action: actionName });
+    }
+    return;
+  }
+
+  // ── Mensagens Deletadas ──────────────────────────────────────────────────
+  if (event.className === 'UpdateDeleteMessages' || event.className === 'UpdateDeleteChannelMessages') {
+    await dispatchWebhook(instanceId, 'deleted_message', {
+      messages: (event as any).messages,
+      channelId: (event as any).channelId?.toString()
+    });
+    return;
   }
 }
