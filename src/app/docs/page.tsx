@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { ArrowLeft, Book, Code, Terminal, Play, MessageSquare, Image as ImageIcon, Video, FileText, Mic, Music, PhoneCall, Smartphone } from "lucide-react";
+import { ArrowLeft, Book, Code, Terminal, Play, MessageSquare, Image as ImageIcon, Video, FileText, Mic, Music, PhoneCall } from "lucide-react";
 
 export default function DocsPage() {
   const [activeTab, setActiveTab] = useState("text");
@@ -30,7 +30,6 @@ export default function DocsPage() {
     { id: "document", label: "Send Document", icon: FileText },
     { id: "smart", label: "Smart Flow", icon: Play },
     { id: "call", label: "Phone Call", icon: PhoneCall },
-    { id: "call-app", label: "Call Mini App", icon: Smartphone },
   ];
 
   const getEndpointData = (id: string) => {
@@ -47,25 +46,6 @@ export default function DocsPage() {
         timeoutSeconds: 30,
         durationSeconds: 5,
         video: false
-      };
-      return { baseUrl, payloadFields, exampleJson };
-    }
-
-    if (id === "call-app") {
-      const baseUrl = `${origin}/api/v1/[instanceId]/send/call-app`;
-      const payloadFields = [
-        { name: "chatId", type: "string | number", description: "The recipient's phone number, username (@), or Telegram chat ID.", required: true },
-        { name: "videoUrl", type: "string", description: "Direct URL of the video (MP4) to be played inside the Mini App.", required: true },
-        { name: "text", type: "string", description: "Message text accompanying the Mini App invite button.", required: false },
-        { name: "buttonText", type: "string", description: "Text displayed on the button (default: '📹 Entrar na Chamada de Vídeo').", required: false },
-        { name: "callerName", type: "string", description: "Name displayed in the call player interface.", required: false },
-      ];
-      const exampleJson = {
-        chatId: "@username",
-        videoUrl: "https://example.com/video.mp4",
-        text: "Oi amor! Minha conexão falhou aqui na chamada 🙈 Clica no botão abaixo para entrar na nossa chamada de vídeo privada:",
-        buttonText: "📹 Entrar na Chamada de Vídeo",
-        callerName: "Sarinha"
       };
       return { baseUrl, payloadFields, exampleJson };
     }
