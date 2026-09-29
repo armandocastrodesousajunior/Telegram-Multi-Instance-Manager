@@ -185,11 +185,6 @@ export async function handleRawEvent(instanceId: string, event: Api.TypeUpdate) 
     return;
   }
 
-  if (event.className === 'UpdateGroupCallParticipants') {
-    await callManager.handleGroupCallParticipantsUpdate(instanceId, event);
-    return;
-  }
-
   // ── Ações de Usuário (Digitando, Áudio, Foto, Vídeo, Documento) ───────────
   if (event.className === 'UpdateUserTyping' || event.className === 'UpdateChatUserTyping') {
     const actionName = (event as any).action?.className || '';
