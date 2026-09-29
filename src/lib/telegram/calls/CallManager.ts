@@ -7,10 +7,8 @@ export interface ActiveCall {
   callId: string;
   instanceId: string;
   chatId: string;
-  videoUrl: string;
-  videoDurationSeconds: number;
+  durationSeconds: number;
   timeoutSeconds: number;
-  hangupOnVideoEnd: boolean;
   state: 'ringing' | 'accepted' | 'completed' | 'abandoned' | 'declined' | 'missed';
   initiatedAt: number;
   answeredAt?: number;
@@ -57,22 +55,23 @@ class CallManager {
   private activeCalls = new Map<string, ActiveCall>();
 
   /**
-   * Inicia uma chamada de vídeo usando a conta Telegram USER via MTProto.
+   * Inicia uma chamada telefônica leve via MTProto.
+   * Ao ser atendida pelo usuário, aguarda `durationSeconds` (padrão 5s) e desliga automaticamente.
    */
-  async initiateVideoCall(
+  async initiateCall(
     client: TelegramClient,
     instanceId: string,
     peerEntity: any,
     chatId: string,
-    videoUrl: string,
-    videoDurationSeconds: number,
     options: {
       timeoutSeconds?: number;
-      hangupOnVideoEnd?: boolean;
+      durationSeconds?: number;
+      video?: boolean;
     } = {}
-  ): Promise<{ callId: string; status: string; videoDurationSeconds: number }> {
+  ): Promise<{ callId: string; status: string; durationSeconds: number; timeoutSeconds: number }> {
     const timeoutSeconds = options.timeoutSeconds ?? 30;
-    const hangupOnVideoEnd = options.hangupOnVideoEnd ?? true;
+    const durationSeconds = options.durationSeconds ?? 5;
+    const isVideo = Boolean(options.video ?? false);
 
     // 1. Obtém parâmetros Diffie-Hellman oficiais do Telegram
     const { p, g } = await getDhConfig(client);
@@ -85,7 +84,7 @@ class CallManager {
     const gABig = bigInt(g).modPow(dhA, p);
     const gABuffer = bigIntToBuffer(gABig, 256);
 
-    // 4. Calcula g_a_hash = sha256(g_a) exigido pelo phone.requestCall
+    // 4. Calcula g_a_hash = sha256(g_a)
     const gAHash = crypto.createHash('sha256').update(gABuffer).digest();
     const randomId = Math.floor(Math.random() * 0x7FFFFFFF);
 
@@ -98,7 +97,7 @@ class CallManager {
     } else if (peerEntity?.className === 'User') {
       inputUser = new Api.InputUser({
         userId: peerEntity.id,
-        accessHash: peerEntity.accessHash || bigInt(0) as any
+        accessHash: peerEntity.accessHash || (bigInt(0) as any)
       });
     }
 
@@ -114,7 +113,7 @@ class CallManager {
           udpReflector: true,
           libraryVersions: ['3.0.0']
         }),
-        video: true
+        video: isVideo
       })
     );
 
@@ -126,10 +125,8 @@ class CallManager {
       callId,
       instanceId,
       chatId,
-      videoUrl,
-      videoDurationSeconds,
+      durationSeconds,
       timeoutSeconds,
-      hangupOnVideoEnd,
       state: 'ringing',
       initiatedAt: Date.now(),
       client,
@@ -139,10 +136,10 @@ class CallManager {
       accessHash
     };
 
-    // Timer de timeout (se o lead não atender dentro do tempo)
+    // Timer de timeout (se o lead não atender dentro do tempo limite)
     activeCall.timeoutTimer = setTimeout(async () => {
       if (this.activeCalls.has(callId) && activeCall.state === 'ringing') {
-        console.log(`[CallManager] Call ${callId} timed out after ${timeoutSeconds}s without answer.`);
+        console.log(`[CallManager] Chamada ${callId} deu timeout após ${timeoutSeconds}s sem resposta.`);
         await this.discardCall(callId, 'missed');
       }
     }, timeoutSeconds * 1000);
@@ -153,8 +150,7 @@ class CallManager {
     await dispatchWebhook(instanceId, 'call.ringing', {
       callId,
       chatId,
-      videoUrl,
-      videoDurationSeconds,
+      durationSeconds,
       timeoutSeconds,
       status: 'ringing',
       initiatedAt: activeCall.initiatedAt
@@ -163,7 +159,8 @@ class CallManager {
     return {
       callId,
       status: 'ringing',
-      videoDurationSeconds
+      durationSeconds,
+      timeoutSeconds
     };
   }
 
@@ -175,7 +172,6 @@ class CallManager {
     const callId = phoneCall.id.toString();
 
     let call = this.activeCalls.get(callId);
-    // Se não encontrou por ID exato, tenta encontrar pelo instanceId se for a única chamada ativa
     if (!call) {
       for (const [_, c] of this.activeCalls.entries()) {
         if (c.instanceId === instanceId) {
@@ -189,27 +185,25 @@ class CallManager {
 
     const className = phoneCall.className;
 
-    // ── Handshake de Criptografia Diffie-Hellman (E2EE) ────────────────────────
+    // ── 1. Handshake Criptográfico Diffie-Hellman (E2EE) ────────────────────────
     if (className === 'PhoneCallAccepted') {
-      console.log(`[CallManager] PhoneCallAccepted recebido para callId=${callId}. Confirmando chave Diffie-Hellman...`);
+      console.log(`[CallManager] PhoneCallAccepted recebido para callId=${callId}. Confirmando chave...`);
       try {
         const { p } = await getDhConfig(call.client);
         const gBBytes = phoneCall.gB;
         if (gBBytes && call.dhA && call.gABuffer) {
           const gBBig = bigInt.fromArray([...gBBytes], 256);
-          // auth_key = (g_b ^ a) mod p
           const authKeyBig = gBBig.modPow(call.dhA, p);
           const authKeyBuffer = bigIntToBuffer(authKeyBig, 256);
 
-          // key_fingerprint = lower 64 bits do SHA1(auth_key)
           const sha1 = crypto.createHash('sha1').update(authKeyBuffer).digest();
           const keyFingerprint = bigInt(sha1.readBigInt64LE(sha1.length - 8).toString());
 
-          const confirmResult = await call.client.invoke(
+          await call.client.invoke(
             new Api.phone.ConfirmCall({
               peer: new Api.InputPhoneCall({
                 id: phoneCall.id,
-                accessHash: phoneCall.accessHash || call.accessHash || bigInt(0) as any
+                accessHash: phoneCall.accessHash || call.accessHash || (bigInt(0) as any)
               }),
               gA: call.gABuffer,
               keyFingerprint: keyFingerprint,
@@ -222,48 +216,44 @@ class CallManager {
               })
             })
           );
-          console.log(`[CallManager] Chamada confirmada com sucesso via phone.confirmCall! Resposta:`, (confirmResult as any)?.className);
+          console.log(`[CallManager] Chamada ${callId} confirmada com sucesso via phone.confirmCall!`);
         }
       } catch (confirmErr: any) {
         console.error(`[CallManager] Erro ao confirmar chamada com phone.confirmCall:`, confirmErr?.message || confirmErr);
       }
     }
 
-    // Chamada atendida pelo lead
+    // ── 2. Chamada atendida pelo lead ──────────────────────────────────────────
     if (className === 'PhoneCallAccepted' || className === 'PhoneCall') {
       if (call.state === 'ringing') {
         call.state = 'accepted';
         call.answeredAt = Date.now();
 
-        // Limpa o timer de timeout
         if (call.timeoutTimer) {
           clearTimeout(call.timeoutTimer);
           call.timeoutTimer = undefined;
         }
 
-        console.log(`[CallManager] Call ${callId} was answered by lead!`);
+        console.log(`[CallManager] Chamada ${callId} foi atendida pelo usuário!`);
 
         await dispatchWebhook(instanceId, 'call.accepted', {
           callId,
           chatId: call.chatId,
-          videoUrl: call.videoUrl,
-          videoDurationSeconds: call.videoDurationSeconds,
+          durationSeconds: call.durationSeconds,
           status: 'accepted',
           answeredAt: call.answeredAt
         });
 
-        // Se configurado para desligar quando o vídeo acabar
-        if (call.hangupOnVideoEnd && call.videoDurationSeconds > 0) {
-          call.hangupTimer = setTimeout(async () => {
-            console.log(`[CallManager] Video playback finished (${call.videoDurationSeconds}s). Ending call.`);
-            call.hungUpBy = 'caller';
-            await this.discardCall(callId, 'hangup');
-          }, call.videoDurationSeconds * 1000);
-        }
+        // Aguarda os X segundos (padrão 5 segundos) e desliga automaticamente
+        call.hangupTimer = setTimeout(async () => {
+          console.log(`[CallManager] Tempo de chamada atingido (${call?.durationSeconds || 5}s). Desligando...`);
+          if (call) call.hungUpBy = 'caller';
+          await this.discardCall(callId, 'hangup');
+        }, (call.durationSeconds || 5) * 1000);
       }
     }
 
-    // Chamada encerrada / descartada
+    // ── 3. Chamada encerrada / descartada ──────────────────────────────────────
     else if (className === 'PhoneCallDiscarded') {
       call.endedAt = Date.now();
 
@@ -271,8 +261,7 @@ class CallManager {
       if (call.hangupTimer) clearTimeout(call.hangupTimer);
 
       const durationSeconds = Number(phoneCall.duration || 0);
-      const videoDuration = call.videoDurationSeconds || 1;
-      const retentionPercentage = Math.min(100, Math.round((durationSeconds / videoDuration) * 100));
+      const plannedDuration = call.durationSeconds || 5;
 
       const reasonObj = phoneCall.reason;
       let disconnectReason = 'unknown';
@@ -291,8 +280,7 @@ class CallManager {
       } else if (disconnectReason === 'missed') {
         finalStatus = 'missed';
       } else if (call.answeredAt || durationSeconds > 0) {
-        // Se atendeu:
-        if (durationSeconds >= (videoDuration - 2) || retentionPercentage >= 95) {
+        if (durationSeconds >= Math.max(1, plannedDuration - 1)) {
           finalStatus = 'completed';
         } else {
           finalStatus = 'abandoned';
@@ -309,9 +297,8 @@ class CallManager {
         answered: !!call.answeredAt || durationSeconds > 0,
         status: finalStatus,
         durationSeconds,
-        videoDurationSeconds: call.videoDurationSeconds,
-        retentionPercentage,
-        completedFullVideo: finalStatus === 'completed',
+        plannedDurationSeconds: plannedDuration,
+        completedFullDuration: finalStatus === 'completed',
         hungUpBy: call.hungUpBy,
         disconnectReason,
         initiatedAt: call.initiatedAt,
@@ -319,7 +306,6 @@ class CallManager {
         endedAt: call.endedAt
       };
 
-      // Dispara o webhook específico de status
       if (finalStatus === 'completed') {
         await dispatchWebhook(instanceId, 'call.completed', telemetryPayload);
       } else if (finalStatus === 'abandoned') {
@@ -333,7 +319,6 @@ class CallManager {
       // Dispara sempre o evento consolidado call.ended
       await dispatchWebhook(instanceId, 'call.ended', telemetryPayload);
 
-      // Limpa a chamada ativa
       this.activeCalls.delete(callId);
     }
   }
@@ -362,7 +347,7 @@ class CallManager {
         })
       );
     } catch (err: any) {
-      console.warn(`[CallManager] DiscardCall non-critical error for ${callId}:`, err?.message || err);
+      console.warn(`[CallManager] DiscardCall erro não crítico para ${callId}:`, err?.message || err);
     } finally {
       this.activeCalls.delete(callId);
     }
