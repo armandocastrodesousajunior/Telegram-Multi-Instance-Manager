@@ -3,6 +3,23 @@ import { checkAuth, unauthorizedResponse } from '@/lib/auth';
 import { getCachedInstance, getOrFetchEntity } from '@/lib/telegram/utils';
 import { ProviderFactory } from '@/lib/telegram/providers/ProviderFactory';
 
+let cachedBotUsername: string | null = null;
+
+async function getBotUsername(token: string): Promise<string | null> {
+  if (cachedBotUsername) return cachedBotUsername;
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+    const data: any = await res.json();
+    if (data.ok && data.result?.username) {
+      cachedBotUsername = data.result.username;
+      return cachedBotUsername;
+    }
+  } catch (e) {
+    console.warn('[CallAppAPI] Não foi possível obter o username do bot via getMe:', e);
+  }
+  return null;
+}
+
 export async function POST(req: NextRequest, { params }: { params: Promise<{ instanceId: string }> }) {
   const requestStartTime = Date.now();
 
@@ -45,16 +62,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     const webAppUrl = `${publicUrl}/call-player?video=${encodeURIComponent(videoUrl)}&name=${encodeURIComponent(displayName)}`;
 
     const botToken = process.env.MINIAPP_BOT_TOKEN;
-    const botUsername = (process.env.MINIAPP_BOT_USERNAME || '').replace('@', '');
-    const shortName = process.env.MINIAPP_SHORT_NAME || 'call';
+    let botUsername = (process.env.MINIAPP_BOT_USERNAME || '').replace('@', '').trim();
+    if (!botUsername && botToken) {
+      const resolved = await getBotUsername(botToken);
+      if (resolved) botUsername = resolved;
+    }
+    const shortName = (process.env.MINIAPP_SHORT_NAME || '').trim();
 
     let tmeLink = webAppUrl;
     if (botUsername) {
       try {
         const startParam = Buffer.from(JSON.stringify({ video: videoUrl, name: displayName })).toString('base64url');
-        tmeLink = `https://t.me/${botUsername}/${shortName}?startapp=${startParam}`;
+        if (shortName) {
+          tmeLink = `https://t.me/${botUsername}/${shortName}?startapp=${startParam}`;
+        } else {
+          tmeLink = `https://t.me/${botUsername}?startapp=${startParam}`;
+        }
       } catch (e) {
-        tmeLink = `https://t.me/${botUsername}/${shortName}`;
+        tmeLink = shortName ? `https://t.me/${botUsername}/${shortName}` : `https://t.me/${botUsername}`;
       }
     }
 
