@@ -42,7 +42,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
       text = "Oi amor! Minha conexão falhou aqui na chamada 🙈 Clica no botão abaixo para entrar na nossa chamada de vídeo privada:",
       buttonText = "📹 Entrar na Chamada de Vídeo",
       callerName,
-      replyToMsgId
+      replyToMsgId,
+      linkType = "auto"
     } = body;
 
     if (!chatId || !videoUrl) {
@@ -81,6 +82,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
       } catch (e) {
         tmeLink = shortName ? `https://t.me/${botUsername}/${shortName}` : `https://t.me/${botUsername}`;
       }
+    }
+
+    // Se linkType for 'direct', ou se não houver short_name configurado, usa a URL web direta
+    let targetLink = webAppUrl;
+    if (linkType === 'miniapp' && botUsername) {
+      targetLink = tmeLink;
+    } else if (linkType === 'auto') {
+      targetLink = (shortName && botUsername) ? tmeLink : webAppUrl;
     }
 
     let sentVia = 'instance';
@@ -124,10 +133,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     // ── 2. Envio via Conta Pessoal (USER) da Instância (Fallback Garantido) ───
     if (!messageId) {
       const provider = await ProviderFactory.getProvider(instance);
-      const formattedMessage = `${text}\n\n👉 [ ${buttonText} ](${tmeLink})`;
+      const cleanBtn = buttonText.trim();
+      const safeText = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const safeBtn = cleanBtn.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+      // Formatação HTML garantida (sem bugs de escape de colchetes markdown)
+      const formattedMessage = `${safeText}\n\n👉 <a href="${targetLink}"><b>${safeBtn}</b></a>`;
 
       const result = await provider.sendMessage(chatId, formattedMessage, {
-        parseMode: 'md',
+        parseMode: 'html',
         replyToMsgId
       });
 
@@ -142,6 +156,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
       messageId,
       sentVia,
       chatId: chatId.toString(),
+      targetLink,
       webAppUrl,
       tmeLink,
       durationMs: totalMs
