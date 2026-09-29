@@ -32,6 +32,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const newInstance = await prisma.instance.create({
       data: {
         name,
+        language: (originalInstance as any).language || 'pt-BR',
         type: originalInstance.type,
         botType: originalInstance.botType,
         botToken: originalInstance.botToken, // Copied, but status will be disconnected

@@ -20,6 +20,7 @@ enum BotType {
 model Instance {
   id                   String       @id @default(uuid())
   name                 String
+  language             String       @default("pt-BR")
   type                 InstanceType @default(USER)
   botType              BotType?
   botToken             String?

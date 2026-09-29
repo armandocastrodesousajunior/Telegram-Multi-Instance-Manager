@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { checkAuth, unauthorizedResponse } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { telegramManager } from '@/lib/telegram/client';
+import { invalidateInstanceSettingsCache } from '@/lib/telegram/utils';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   let authInstanceId = undefined;
@@ -72,14 +73,24 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const { id } = await params;
     const body = await req.json();
     
-    if (!body.name) {
-      return NextResponse.json({ error: 'Name is required' }, { status: 400 });
+    const dataToUpdate: any = {};
+    if (typeof body.name === 'string' && body.name.trim()) {
+      dataToUpdate.name = body.name.trim();
+    }
+    if (typeof body.language === 'string' && body.language.trim()) {
+      dataToUpdate.language = body.language.trim();
+    }
+
+    if (Object.keys(dataToUpdate).length === 0) {
+      return NextResponse.json({ error: 'No valid fields provided (name or language required)' }, { status: 400 });
     }
 
     const updated = await prisma.instance.update({
       where: { id },
-      data: { name: body.name }
+      data: dataToUpdate
     });
+
+    invalidateInstanceSettingsCache(id);
 
     return NextResponse.json(updated);
   } catch (err: any) {

@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
   if (!(await checkAuth(req))) return unauthorizedResponse();
 
   try {
-    const { name, type, botType, botToken } = await req.json();
+    const { name, type, botType, botToken, language } = await req.json();
     if (!name) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 });
     }
@@ -31,6 +31,7 @@ export async function POST(req: NextRequest) {
     const instance = await prisma.instance.create({
       data: {
         name,
+        language: typeof language === 'string' && language.trim() ? language.trim() : 'pt-BR',
         type: type || 'USER',
         botType: botType || null,
         botToken: botToken || null,

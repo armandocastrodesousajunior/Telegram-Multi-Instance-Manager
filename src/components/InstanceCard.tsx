@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { ArrowRight, PhoneCall, Edit2, Trash2, Shield, Copy } from "lucide-react";
 import { StatusBadge } from "./StatusBadge";
+import { getLanguageDisplay } from "@/lib/languages";
 
 export interface Instance {
   id: string;
   name: string;
+  language?: string;
   status: string;
   phone?: string;
   type?: "USER" | "BOT";
@@ -24,16 +26,37 @@ interface InstanceCardProps {
 }
 
 export function InstanceCard({ instance, onEdit, onDelete, onDuplicate }: InstanceCardProps) {
+  const langInfo = getLanguageDisplay(instance.language);
+
   return (
     <div className="glass-card animate-fade-in" style={{ display: "flex", flexDirection: "column", height: "100%", padding: "20px" }}>
       
-      {/* Top Header: Status (Left) and Actions (Right) */}
+      {/* Top Header: Status & Language (Left) and Actions (Right) */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-        <StatusBadge status={instance.status} />
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <StatusBadge status={instance.status} />
+          <span 
+            title={`Language: ${langInfo.label} (${langInfo.code})`}
+            style={{ 
+              fontSize: "12px", 
+              padding: "2px 8px", 
+              background: "rgba(255, 255, 255, 0.06)", 
+              border: "1px solid var(--glass-border)", 
+              borderRadius: "12px",
+              color: "var(--text-secondary)",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "4px"
+            }}
+          >
+            <span>{langInfo.flag}</span>
+            <span style={{ fontWeight: 500 }}>{langInfo.code}</span>
+          </span>
+        </div>
         
         <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
           {onEdit && (
-            <button onClick={() => onEdit(instance)} className="icon-btn" title="Edit name" style={{ padding: "6px", background: "rgba(255,255,255,0.05)", borderRadius: "6px", border: "1px solid var(--glass-border)", cursor: "pointer", color: "var(--text-secondary)", display: "flex", transition: "all 0.2s" }}>
+            <button onClick={() => onEdit(instance)} className="icon-btn" title="Edit instance" style={{ padding: "6px", background: "rgba(255,255,255,0.05)", borderRadius: "6px", border: "1px solid var(--glass-border)", cursor: "pointer", color: "var(--text-secondary)", display: "flex", transition: "all 0.2s" }}>
               <Edit2 size={14} />
             </button>
           )}

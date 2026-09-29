@@ -44,7 +44,7 @@ export default function Dashboard() {
     }
   };
 
-  const handleCreateInstance = async (payload: { name: string, type: "USER" | "BOT", botType?: "NORMAL" | "BUSINESS", botToken?: string }) => {
+  const handleCreateInstance = async (payload: { name: string, language?: string, type: "USER" | "BOT", botType?: "NORMAL" | "BUSINESS", botToken?: string }) => {
     try {
       const instance = await apiClient.post<Instance>("/api/instances", payload);
       setShowCreate(false);
@@ -115,7 +115,7 @@ export default function Dashboard() {
           <EditInstanceModal 
             instance={editingInstance} 
             onClose={() => setEditingInstance(null)} 
-            onSubmit={async (id, name) => {
+            onSubmit={async (id, name, language) => {
               try {
                 // Fetch directly since apiClient might not support PATCH explicitly
                 const res = await fetch(`/api/instances/${id}`, {
@@ -124,7 +124,7 @@ export default function Dashboard() {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${localStorage.getItem('token')}`
                   },
-                  body: JSON.stringify({ name })
+                  body: JSON.stringify({ name, language })
                 });
                 if (!res.ok) {
                   const errorData = await res.json().catch(() => ({}));
