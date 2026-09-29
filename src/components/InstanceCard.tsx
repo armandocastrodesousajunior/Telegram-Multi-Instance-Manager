@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, PhoneCall, Edit2, Trash2, Shield, Copy } from "lucide-react";
+import { ArrowRight, PhoneCall, Edit2, Trash2, Shield, Copy, Globe } from "lucide-react";
 import { StatusBadge } from "./StatusBadge";
 import { getLanguageDisplay } from "@/lib/languages";
 
@@ -31,28 +31,9 @@ export function InstanceCard({ instance, onEdit, onDelete, onDuplicate }: Instan
   return (
     <div className="glass-card animate-fade-in" style={{ display: "flex", flexDirection: "column", height: "100%", padding: "20px" }}>
       
-      {/* Top Header: Status & Language (Left) and Actions (Right) */}
+      {/* Top Header: Status (Left) and Actions (Right) */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <StatusBadge status={instance.status} />
-          <span 
-            title={`Language: ${langInfo.label} (${langInfo.code})`}
-            style={{ 
-              fontSize: "12px", 
-              padding: "2px 8px", 
-              background: "rgba(255, 255, 255, 0.06)", 
-              border: "1px solid var(--glass-border)", 
-              borderRadius: "12px",
-              color: "var(--text-secondary)",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "4px"
-            }}
-          >
-            <span>{langInfo.flag}</span>
-            <span style={{ fontWeight: 500 }}>{langInfo.code}</span>
-          </span>
-        </div>
+        <StatusBadge status={instance.status} />
         
         <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
           {onEdit && (
@@ -73,28 +54,53 @@ export function InstanceCard({ instance, onEdit, onDelete, onDuplicate }: Instan
         </div>
       </div>
 
-      {/* Main Info: Name and Phone */}
-      <div style={{ display: "flex", flexDirection: "column", minWidth: 0, gap: "6px", marginBottom: "16px" }}>
-        <h3 style={{ fontSize: "20px", fontWeight: 600, margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={instance.name}>
+      {/* Main Info: Name and Phone / Language */}
+      <div style={{ display: "flex", flexDirection: "column", minWidth: 0, gap: "10px", marginBottom: "18px" }}>
+        <h3 style={{ fontSize: "19px", fontWeight: 600, margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={instance.name}>
           {instance.name}
         </h3>
         
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "var(--text-secondary)", fontSize: "13px" }}>
-          {instance.type === 'BOT' ? (
-            <>
-              <Shield size={14} style={{ flexShrink: 0, color: "var(--accent-primary)" }} />
-              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {instance.botType === 'BUSINESS' ? 'Business Account Bot' : 'Standard Bot'}
-              </span>
-            </>
-          ) : (
-            <>
-              <PhoneCall size={14} style={{ flexShrink: 0 }} />
-              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={instance.phone || "No phone connected"}>
-                {instance.phone || "No phone connected"}
-              </span>
-            </>
-          )}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "var(--text-secondary)", fontSize: "13px", minWidth: 0 }}>
+            {instance.type === 'BOT' ? (
+              <>
+                <Shield size={14} style={{ flexShrink: 0, color: "var(--accent-primary, #6366f1)" }} />
+                <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {instance.botType === 'BUSINESS' ? 'Business Bot' : 'Standard Bot'}
+                </span>
+              </>
+            ) : (
+              <>
+                <PhoneCall size={14} style={{ flexShrink: 0 }} />
+                <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={instance.phone || "No phone connected"}>
+                  {instance.phone || "No phone connected"}
+                </span>
+              </>
+            )}
+          </div>
+
+          {/* Language Badge */}
+          <span 
+            title={`Idioma: ${langInfo.label} (${langInfo.code})`}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "5px",
+              padding: "3px 8px",
+              borderRadius: "6px",
+              background: "rgba(99, 102, 241, 0.12)",
+              border: "1px solid rgba(99, 102, 241, 0.3)",
+              color: "#a5b4fc",
+              fontSize: "11px",
+              fontWeight: 600,
+              letterSpacing: "0.2px",
+              whiteSpace: "nowrap",
+              flexShrink: 0
+            }}
+          >
+            <Globe size={11} style={{ opacity: 0.9 }} />
+            <span>{langInfo.code}</span>
+          </span>
         </div>
       </div>
 

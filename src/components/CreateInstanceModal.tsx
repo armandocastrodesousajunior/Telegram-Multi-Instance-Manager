@@ -1,8 +1,7 @@
 "use client";
 import { useState } from "react";
 import { X, Save } from "lucide-react";
-
-import { POPULAR_LANGUAGES } from "@/lib/languages";
+import { LanguageSelect } from "./LanguageSelect";
 
 interface Props {
   onClose: () => void;
@@ -12,8 +11,6 @@ interface Props {
 export function CreateInstanceModal({ onClose, onSubmit }: Props) {
   const [name, setName] = useState("");
   const [language, setLanguage] = useState("pt-BR");
-  const [isCustomLang, setIsCustomLang] = useState(false);
-  const [customLang, setCustomLang] = useState("");
   const [type, setType] = useState<"USER" | "BOT">("USER");
   const [botType, setBotType] = useState<"NORMAL" | "BUSINESS">("NORMAL");
   const [botToken, setBotToken] = useState("");
@@ -22,10 +19,9 @@ export function CreateInstanceModal({ onClose, onSubmit }: Props) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const finalLanguage = isCustomLang ? (customLang.trim() || 'pt-BR') : language;
     await onSubmit({ 
       name, 
-      language: finalLanguage,
+      language,
       type, 
       botType: type === "BOT" ? botType : undefined, 
       botToken: type === "BOT" ? botToken : undefined 
@@ -35,7 +31,7 @@ export function CreateInstanceModal({ onClose, onSubmit }: Props) {
 
   return (
     <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", background: "rgba(0, 0, 0, 0.6)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
-      <div className="modal glass-panel animate-slide-up" style={{ width: "400px", padding: "24px", position: "relative" }}>
+      <div className="modal glass-panel animate-slide-up" style={{ width: "420px", padding: "24px", position: "relative" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
           <h2 style={{ fontSize: "1.25rem", fontWeight: 600 }}>Create Instance</h2>
           <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer" }}>
@@ -48,54 +44,12 @@ export function CreateInstanceModal({ onClose, onSubmit }: Props) {
             <input type="text" className="input-field" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Support Account" required />
           </div>
 
-          <div style={{ marginBottom: "16px" }}>
-            <label style={{ display: "block", fontSize: "14px", fontWeight: 500, marginBottom: "8px" }}>
-              Language / Idioma
-            </label>
-            {!isCustomLang ? (
-              <select 
-                className="input-field" 
-                value={language} 
-                onChange={e => {
-                  if (e.target.value === "__custom__") {
-                    setIsCustomLang(true);
-                  } else {
-                    setLanguage(e.target.value);
-                  }
-                }}
-              >
-                {POPULAR_LANGUAGES.map(lang => (
-                  <option key={lang.code} value={lang.code}>
-                    {lang.flag} {lang.name} ({lang.code})
-                  </option>
-                ))}
-                <option value="__custom__">➕ Other / Custom language...</option>
-              </select>
-            ) : (
-              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                <input 
-                  type="text" 
-                  className="input-field" 
-                  value={customLang} 
-                  onChange={e => setCustomLang(e.target.value)} 
-                  placeholder="e.g. es-CO, fr-CA, pt-PT" 
-                  autoFocus 
-                  required 
-                />
-                <button 
-                  type="button" 
-                  className="btn-ghost" 
-                  onClick={() => setIsCustomLang(false)}
-                  style={{ fontSize: "12px", whiteSpace: "nowrap", padding: "8px 12px" }}
-                >
-                  List
-                </button>
-              </div>
-            )}
-            <span style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "4px", display: "block" }}>
-              Identifies the language in webhook payloads (Default: pt-BR).
-            </span>
-          </div>
+          <LanguageSelect 
+            value={language} 
+            onChange={setLanguage} 
+            label="Language / Idioma" 
+            description="Identifies the language in webhook payloads (Default: pt-BR)." 
+          />
 
           <div style={{ marginBottom: "16px" }}>
             <label style={{ display: "block", fontSize: "14px", fontWeight: 500, marginBottom: "8px" }}>Instance Type</label>
