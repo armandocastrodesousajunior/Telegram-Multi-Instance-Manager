@@ -402,14 +402,36 @@ class CallManager {
       accessHash: bigInt(groupCallObj.accessHash.toString())
     });
 
-    const exported = await client.invoke(
-      new Api.phone.ExportGroupCallInvite({
-        call: inputCall,
-        canSelfUnmute: true
-      })
-    );
+    let callLink = '';
+    try {
+      const exported = await client.invoke(
+        new Api.phone.ExportGroupCallInvite({
+          call: inputCall,
+          canSelfUnmute: true
+        })
+      );
+      callLink = exported.link;
+    } catch (exportErr: any) {
+      console.log('[CallManager] ExportGroupCallInvite falhou (canal privado). Gerando link via ExportChatInvite...');
+      const chatInvite: any = await client.invoke(
+        new Api.messages.ExportChatInvite({
+          peer: channelInput
+        })
+      );
+      callLink = chatInvite.link ? `${chatInvite.link}?videochat` : chatInvite.link;
+    }
 
-    const callLink = exported.link;
+    // Opcional: Convida o usuário formalmente para o chat de vídeo (gera notificação no Telegram dele)
+    try {
+      await client.invoke(
+        new Api.phone.InviteToGroupCall({
+          call: inputCall,
+          users: [peerEntity]
+        })
+      );
+    } catch (invErr: any) {
+      console.log('[CallManager] InviteToGroupCall info/non-critical:', invErr?.message);
+    }
 
     // 4. Enviar mensagem com o link para o destinatário no chat
     const defaultMsg = `📞 Iniciei uma chamada de vídeo com você.\n\nToque no link abaixo para entrar:\n👉 ${callLink}`;
