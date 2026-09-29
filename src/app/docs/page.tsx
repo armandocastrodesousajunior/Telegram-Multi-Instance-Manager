@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { ArrowLeft, Book, Code, Terminal, Play, MessageSquare, Image as ImageIcon, Video, FileText, Mic, Music, PhoneCall } from "lucide-react";
+import { ArrowLeft, Book, Code, Terminal, Play, MessageSquare, Image as ImageIcon, Video, FileText, Mic, Music, PhoneCall, Link2 } from "lucide-react";
 
 export default function DocsPage() {
   const [activeTab, setActiveTab] = useState("text");
@@ -29,7 +29,8 @@ export default function DocsPage() {
     { id: "voice", label: "Send Voice Note", icon: Mic },
     { id: "document", label: "Send Document", icon: FileText },
     { id: "smart", label: "Smart Flow", icon: Play },
-    { id: "call-video", label: "Video Call", icon: PhoneCall },
+    { id: "call-video", label: "Video Call (Direct)", icon: PhoneCall },
+    { id: "call-link", label: "Video Call (Link)", icon: Link2 },
   ];
 
   const getEndpointData = (id: string) => {
@@ -40,12 +41,34 @@ export default function DocsPage() {
         { name: "url", type: "string", description: "Direct URL of the MP4 video to stream during the call.", required: true },
         { name: "timeoutSeconds", type: "number", description: "Max seconds to ring before considering missed (default: 30).", required: false },
         { name: "hangupOnVideoEnd", type: "boolean", description: "Automatically hang up when the video playback finishes (default: true).", required: false },
+        { name: "fallbackToLinkOnPrivacy", type: "boolean", description: "If recipient blocks direct calls (USER_PRIVACY_RESTRICTED), automatically generates a Telegram call link and sends it in the chat (default: false).", required: false },
+        { name: "messageText", type: "string", description: "Optional custom message text if falling back to link. Can include {link}.", required: false }
       ];
       const exampleJson = {
         chatId: "@username",
         url: "https://example.com/pitch.mp4",
         timeoutSeconds: 30,
-        hangupOnVideoEnd: true
+        hangupOnVideoEnd: true,
+        fallbackToLinkOnPrivacy: true
+      };
+      return { baseUrl, payloadFields, exampleJson };
+    }
+
+    if (id === "call-link") {
+      const baseUrl = `${origin}/api/v1/[instanceId]/call/link`;
+      const payloadFields = [
+        { name: "chatId", type: "string | number", description: "The recipient's phone number, username (@), or Telegram chat ID.", required: true },
+        { name: "url", type: "string", description: "Direct URL of the MP4 video to stream during the call.", required: true },
+        { name: "timeoutSeconds", type: "number", description: "Max seconds to wait for lead to enter the call link before considering missed (default: 60).", required: false },
+        { name: "hangupOnVideoEnd", type: "boolean", description: "Automatically hang up when the video playback finishes (default: true).", required: false },
+        { name: "messageText", type: "string", description: "Custom message to send with the link. Use {link} where the Telegram call link should appear.", required: false }
+      ];
+      const exampleJson = {
+        chatId: "@username",
+        url: "https://example.com/pitch.mp4",
+        timeoutSeconds: 60,
+        hangupOnVideoEnd: true,
+        messageText: "📞 Iniciei uma chamada de vídeo com você.\n\nToque no link abaixo para entrar:\n👉 {link}"
       };
       return { baseUrl, payloadFields, exampleJson };
     }

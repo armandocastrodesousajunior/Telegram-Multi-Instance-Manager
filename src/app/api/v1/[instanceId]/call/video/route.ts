@@ -27,7 +27,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
   try {
     const { instanceId } = await params;
     const body = await req.json();
-    const { chatId, url, timeoutSeconds = 30, hangupOnVideoEnd = true } = body;
+    const { 
+      chatId, 
+      url, 
+      timeoutSeconds = 30, 
+      hangupOnVideoEnd = true,
+      fallbackToLinkOnPrivacy = false,
+      messageText
+    } = body;
 
     if (!chatId || !url) {
       return NextResponse.json(
@@ -97,18 +104,60 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     }
 
     // ── 4. Disparo da Chamada de Vídeo via CallManager ─────────────────────────
-    const callResult = await callManager.initiateVideoCall(
-      client,
-      instanceId,
-      peerEntity,
-      chatId.toString(),
-      url,
-      videoDurationSeconds,
-      {
-        timeoutSeconds: Number(timeoutSeconds) || 30,
-        hangupOnVideoEnd: Boolean(hangupOnVideoEnd)
+    let callResult;
+    try {
+      callResult = await callManager.initiateVideoCall(
+        client,
+        instanceId,
+        peerEntity,
+        chatId.toString(),
+        url,
+        videoDurationSeconds,
+        {
+          timeoutSeconds: Number(timeoutSeconds) || 30,
+          hangupOnVideoEnd: Boolean(hangupOnVideoEnd)
+        }
+      );
+    } catch (callErr: any) {
+      const errMsg = callErr?.message || '';
+      if (Boolean(fallbackToLinkOnPrivacy) && errMsg.includes('USER_PRIVACY_RESTRICTED')) {
+        console.log(`[CallVideoAPI] USER_PRIVACY_RESTRICTED detectado. Executando fallback para chamada via link...`);
+        const linkResult = await callManager.initiateCallViaLink(
+          client,
+          instanceId,
+          peerEntity,
+          chatId.toString(),
+          url,
+          videoDurationSeconds,
+          {
+            timeoutSeconds: Number(timeoutSeconds) || 60,
+            hangupOnVideoEnd: Boolean(hangupOnVideoEnd),
+            messageText
+          }
+        );
+
+        const totalMs = Date.now() - requestStartTime;
+        return NextResponse.json({
+          success: true,
+          mode: 'fallback_link',
+          fallbackReason: 'USER_PRIVACY_RESTRICTED',
+          message: 'Chamada direta restrita pela privacidade do destinatário. Link oficial do Telegram gerado e enviado com sucesso no chat.',
+          callId: linkResult.callId,
+          link: linkResult.link,
+          status: linkResult.status,
+          chatId: chatId.toString(),
+          videoDurationSeconds: linkResult.videoDurationSeconds,
+          timeoutSeconds: Number(timeoutSeconds) || 60,
+          hangupOnVideoEnd: Boolean(hangupOnVideoEnd),
+          timingBreakdown: {
+            ...timingBreakdown,
+            callInitMs: Date.now() - tInit,
+            totalMs
+          }
+        });
       }
-    );
+      throw callErr;
+    }
     timingBreakdown.callInitMs = Date.now() - tInit;
 
     const totalMs = Date.now() - requestStartTime;
