@@ -116,7 +116,8 @@ export default function DocsPage() {
     setTestLoading(true);
     setTestResponse(null);
     try {
-      const res = await fetch(`${origin}/api/v1/${testInstanceId}/send/${activeTab}`, {
+      const targetUrl = currentData.baseUrl.replace("[instanceId]", testInstanceId);
+      const res = await fetch(targetUrl, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${testApiToken}`,

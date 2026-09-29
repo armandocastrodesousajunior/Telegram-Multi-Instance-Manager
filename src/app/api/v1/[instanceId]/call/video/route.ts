@@ -91,7 +91,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
       return NextResponse.json({ error: 'Cliente Telegram desconectado', code: 'CLIENT_DISCONNECTED' }, { status: 400 });
     }
 
-    const peerEntity = await getOrFetchEntity(client, chatId);
+    const { entity: peerEntity } = await getOrFetchEntity(client, chatId);
     if (!peerEntity) {
       return NextResponse.json({ error: `Destinatário '${chatId}' não encontrado no Telegram`, code: 'PEER_NOT_FOUND' }, { status: 404 });
     }

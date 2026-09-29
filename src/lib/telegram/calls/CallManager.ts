@@ -46,9 +46,22 @@ class CallManager {
     const gAHash = crypto.randomBytes(32);
     const randomId = Math.floor(Math.random() * 0x7FFFFFFF);
 
+    let inputUser: any = peerEntity;
+    if (peerEntity?.className === 'InputPeerUser') {
+      inputUser = new Api.InputUser({
+        userId: peerEntity.userId,
+        accessHash: peerEntity.accessHash
+      });
+    } else if (peerEntity?.className === 'User') {
+      inputUser = new Api.InputUser({
+        userId: peerEntity.id,
+        accessHash: peerEntity.accessHash || bigInt(0) as any
+      });
+    }
+
     const callResult = await client.invoke(
       new Api.phone.RequestCall({
-        userId: peerEntity,
+        userId: inputUser,
         randomId,
         gAHash,
         protocol: new Api.PhoneCallProtocol({
