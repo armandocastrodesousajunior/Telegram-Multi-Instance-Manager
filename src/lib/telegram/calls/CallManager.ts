@@ -19,6 +19,38 @@ export interface ActiveCall {
   hangupTimer?: NodeJS.Timeout;
   client: TelegramClient;
   hungUpBy: 'caller' | 'callee';
+  dhA: bigInt.BigInteger;
+  gABuffer: Buffer;
+  accessHash?: any;
+}
+
+function bigIntToBuffer(num: bigInt.BigInteger, length = 256): Buffer {
+  let hex = num.toString(16);
+  if (hex.length % 2 !== 0) hex = '0' + hex;
+  const buf = Buffer.from(hex, 'hex');
+  if (buf.length < length) {
+    const pad = Buffer.alloc(length - buf.length, 0);
+    return Buffer.concat([pad, buf]);
+  }
+  return buf.subarray(buf.length - length);
+}
+
+let cachedDh: { p: bigInt.BigInteger; g: number; expiresAt: number } | null = null;
+
+async function getDhConfig(client: TelegramClient): Promise<{ p: bigInt.BigInteger; g: number }> {
+  if (cachedDh && cachedDh.expiresAt > Date.now()) {
+    return cachedDh;
+  }
+  const res: any = await client.invoke(
+    new Api.messages.GetDhConfig({
+      version: 0,
+      randomLength: 256
+    })
+  );
+  const p = bigInt.fromArray([...res.p], 256);
+  const g = res.g;
+  cachedDh = { p, g, expiresAt: Date.now() + 24 * 60 * 60 * 1000 };
+  return cachedDh;
 }
 
 class CallManager {
@@ -42,8 +74,19 @@ class CallManager {
     const timeoutSeconds = options.timeoutSeconds ?? 30;
     const hangupOnVideoEnd = options.hangupOnVideoEnd ?? true;
 
-    // Gera o gAHash (32 bytes aleatórios para o Diffie-Hellman)
-    const gAHash = crypto.randomBytes(32);
+    // 1. Obtém parâmetros Diffie-Hellman oficiais do Telegram
+    const { p, g } = await getDhConfig(client);
+
+    // 2. Gera chave privada 'a' (2048 bits / 256 bytes)
+    const aBytes = crypto.randomBytes(256);
+    const dhA = bigInt.fromArray([...aBytes], 256);
+
+    // 3. Calcula g_a = (g ^ a) mod p
+    const gABig = bigInt(g).modPow(dhA, p);
+    const gABuffer = bigIntToBuffer(gABig, 256);
+
+    // 4. Calcula g_a_hash = sha256(g_a) exigido pelo phone.requestCall
+    const gAHash = crypto.createHash('sha256').update(gABuffer).digest();
     const randomId = Math.floor(Math.random() * 0x7FFFFFFF);
 
     let inputUser: any = peerEntity;
@@ -77,6 +120,7 @@ class CallManager {
 
     const phoneCallObj = (callResult as any).phoneCall || callResult;
     const callId = phoneCallObj.id?.toString() || randomId.toString();
+    const accessHash = phoneCallObj.accessHash;
 
     const activeCall: ActiveCall = {
       callId,
@@ -89,7 +133,10 @@ class CallManager {
       state: 'ringing',
       initiatedAt: Date.now(),
       client,
-      hungUpBy: 'caller'
+      hungUpBy: 'caller',
+      dhA,
+      gABuffer,
+      accessHash
     };
 
     // Timer de timeout (se o lead não atender dentro do tempo)
@@ -141,6 +188,46 @@ class CallManager {
     if (!call) return;
 
     const className = phoneCall.className;
+
+    // ── Handshake de Criptografia Diffie-Hellman (E2EE) ────────────────────────
+    if (className === 'PhoneCallAccepted') {
+      console.log(`[CallManager] PhoneCallAccepted recebido para callId=${callId}. Confirmando chave Diffie-Hellman...`);
+      try {
+        const { p } = await getDhConfig(call.client);
+        const gBBytes = phoneCall.gB;
+        if (gBBytes && call.dhA && call.gABuffer) {
+          const gBBig = bigInt.fromArray([...gBBytes], 256);
+          // auth_key = (g_b ^ a) mod p
+          const authKeyBig = gBBig.modPow(call.dhA, p);
+          const authKeyBuffer = bigIntToBuffer(authKeyBig, 256);
+
+          // key_fingerprint = lower 64 bits do SHA1(auth_key)
+          const sha1 = crypto.createHash('sha1').update(authKeyBuffer).digest();
+          const keyFingerprint = bigInt(sha1.readBigInt64LE(sha1.length - 8).toString());
+
+          const confirmResult = await call.client.invoke(
+            new Api.phone.ConfirmCall({
+              peer: new Api.InputPhoneCall({
+                id: phoneCall.id,
+                accessHash: phoneCall.accessHash || call.accessHash || bigInt(0) as any
+              }),
+              gA: call.gABuffer,
+              keyFingerprint: keyFingerprint,
+              protocol: new Api.PhoneCallProtocol({
+                minLayer: 65,
+                maxLayer: 93,
+                udpP2p: true,
+                udpReflector: true,
+                libraryVersions: ['3.0.0']
+              })
+            })
+          );
+          console.log(`[CallManager] Chamada confirmada com sucesso via phone.confirmCall! Resposta:`, (confirmResult as any)?.className);
+        }
+      } catch (confirmErr: any) {
+        console.error(`[CallManager] Erro ao confirmar chamada com phone.confirmCall:`, confirmErr?.message || confirmErr);
+      }
+    }
 
     // Chamada atendida pelo lead
     if (className === 'PhoneCallAccepted' || className === 'PhoneCall') {
