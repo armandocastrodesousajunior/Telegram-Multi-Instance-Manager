@@ -25,7 +25,12 @@ import {
   PhoneIncoming,
   Trash2,
   Edit3,
-  Layers
+  Layers,
+  Bot,
+  ExternalLink,
+  Copy,
+  Check,
+  Share2
 } from "lucide-react";
 
 export default function DocsPage() {
@@ -34,6 +39,10 @@ export default function DocsPage() {
   const [activeWebhook, setActiveWebhook] = useState("overview");
   const [origin, setOrigin] = useState("https://your-domain.com");
 
+  // Feedback de cópia
+  const [copiedAiLink, setCopiedAiLink] = useState(false);
+  const [copiedPageLink, setCopiedPageLink] = useState(false);
+
   // Test Runner States (para API REST)
   const [testInstanceId, setTestInstanceId] = useState("");
   const [testApiToken, setTestApiToken] = useState("");
@@ -41,9 +50,45 @@ export default function DocsPage() {
   const [testLoading, setTestLoading] = useState(false);
   const [testResponse, setTestResponse] = useState<any>(null);
 
+  // ── Atualização Bidirecional da URL (Deep Linking para IAs e Navegação) ─────
+  const updateUrl = (sec: "endpoints" | "webhooks", item: string) => {
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("section", sec);
+      if (sec === "webhooks") {
+        url.searchParams.delete("endpoint");
+        const cleanEvent = item.replace(/^wh-/, "");
+        url.searchParams.set("event", cleanEvent);
+      } else {
+        url.searchParams.delete("event");
+        url.searchParams.set("endpoint", item);
+      }
+      window.history.replaceState({}, "", url.toString());
+    }
+  };
+
+  // Carrega parâmetros iniciais da URL (se o usuário ou IA abrir um link direto)
   useEffect(() => {
     if (typeof window !== "undefined") {
       setOrigin(window.location.origin);
+      const params = new URLSearchParams(window.location.search);
+      const sec = params.get("section");
+      const ev = params.get("event");
+      const ep = params.get("endpoint");
+
+      if (sec === "webhooks" || (!sec && ev)) {
+        setDocSection("webhooks");
+        if (ev) {
+          if (ev === "overview" || ev === "arquitetura") {
+            setActiveWebhook("overview");
+          } else {
+            setActiveWebhook(ev.startsWith("wh-") ? ev : `wh-${ev}`);
+          }
+        }
+      } else if (sec === "endpoints" || (!sec && ep)) {
+        setDocSection("endpoints");
+        if (ep) setActiveTab(ep);
+      }
     }
   }, []);
 
@@ -125,7 +170,7 @@ export default function DocsPage() {
     {
       name: "Visão Geral",
       items: [
-        { id: "overview", label: "Arquitetura & Envelope", icon: Layers, event: "" }
+        { id: "overview", label: "Arquitetura & Envelope", icon: Layers, event: "overview" }
       ]
     },
     {
@@ -167,7 +212,7 @@ export default function DocsPage() {
         return {
           title: "Webhooks: Visão Geral & Arquitetura de Entrega",
           eventName: "Todos os Webhooks",
-          badgeColor: "var(--accent-color)",
+          badgeColor: "#6366f1",
           description: "Os webhooks permitem que a sua aplicação receba notificações em tempo real sempre que mensagens, mídias, ações do usuário (como digitar ou gravar áudio) ou eventos de chamadas telefônicas ocorrerem em qualquer instância conectada.",
           deliveryInfo: {
             method: "POST",
@@ -536,7 +581,7 @@ export default function DocsPage() {
 
   const currentWebhookData = getWebhookData(activeWebhook);
 
-  // Initialize test payload when tab changes or origin loads
+  // Inicializa test payload quando troca de tab
   useEffect(() => {
     if (docSection === "endpoints") {
       setTestPayload(JSON.stringify(getEndpointData(activeTab).exampleJson, null, 2));
@@ -579,6 +624,42 @@ export default function DocsPage() {
     }
   };
 
+  // ── Helpers para Links da IA ────────────────────────────────────────────────
+  const getAiMarkdownUrl = () => {
+    if (docSection === "webhooks") {
+      const cleanEvent = activeWebhook.replace(/^wh-/, "");
+      return `${origin}/api/docs/ai?section=webhooks&event=${cleanEvent}`;
+    } else {
+      return `${origin}/api/docs/ai?section=endpoints&endpoint=${activeTab}`;
+    }
+  };
+
+  const getPageDeepLinkUrl = () => {
+    if (typeof window !== "undefined") {
+      return window.location.href;
+    }
+    if (docSection === "webhooks") {
+      const cleanEvent = activeWebhook.replace(/^wh-/, "");
+      return `${origin}/docs?section=webhooks&event=${cleanEvent}`;
+    } else {
+      return `${origin}/docs?section=endpoints&endpoint=${activeTab}`;
+    }
+  };
+
+  const handleCopyAiLink = () => {
+    const url = getAiMarkdownUrl();
+    navigator.clipboard.writeText(url);
+    setCopiedAiLink(true);
+    setTimeout(() => setCopiedAiLink(false), 3000);
+  };
+
+  const handleCopyPageLink = () => {
+    const url = getPageDeepLinkUrl();
+    navigator.clipboard.writeText(url);
+    setCopiedPageLink(true);
+    setTimeout(() => setCopiedPageLink(false), 3000);
+  };
+
   return (
     <div className="page-container">
       {/* Sidebar */}
@@ -588,50 +669,73 @@ export default function DocsPage() {
           Voltar ao Dashboard
         </Link>
 
-        {/* Seletor de Modo: REST API vs Webhooks */}
-        <div style={{ display: "flex", gap: "6px", marginBottom: "20px", background: "rgba(0,0,0,0.3)", padding: "4px", borderRadius: "10px", border: "1px solid var(--glass-border)" }}>
+        {/* ── Seletor de Modo: REST API vs Webhooks (Estilo Corrigido com Alto Contraste) ── */}
+        <div 
+          style={{ 
+            display: "flex", 
+            gap: "6px", 
+            marginBottom: "20px", 
+            background: "rgba(0, 0, 0, 0.45)", 
+            padding: "5px", 
+            borderRadius: "12px", 
+            border: "1px solid rgba(255, 255, 255, 0.12)" 
+          }}
+        >
           <button
-            onClick={() => setDocSection("endpoints")}
+            onClick={() => {
+              setDocSection("endpoints");
+              updateUrl("endpoints", activeTab);
+            }}
             style={{
               flex: 1,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               gap: "8px",
-              padding: "8px 10px",
+              padding: "10px 14px",
               borderRadius: "8px",
-              border: "none",
-              background: docSection === "endpoints" ? "var(--accent-color)" : "transparent",
-              color: docSection === "endpoints" ? "#fff" : "var(--text-secondary)",
+              border: docSection === "endpoints" ? "1px solid rgba(139, 92, 246, 0.5)" : "1px solid transparent",
+              background: docSection === "endpoints" 
+                ? "linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)" 
+                : "transparent",
+              color: docSection === "endpoints" ? "#ffffff" : "var(--text-secondary)",
+              boxShadow: docSection === "endpoints" ? "0 4px 14px rgba(99, 102, 241, 0.35)" : "none",
               fontSize: "13px",
               fontWeight: 600,
               cursor: "pointer",
-              transition: "all 0.2s"
+              transition: "all 0.2s ease"
             }}
           >
-            <Terminal size={14} />
+            <Terminal size={14} style={{ opacity: docSection === "endpoints" ? 1 : 0.7 }} />
             API REST
           </button>
+          
           <button
-            onClick={() => setDocSection("webhooks")}
+            onClick={() => {
+              setDocSection("webhooks");
+              updateUrl("webhooks", activeWebhook);
+            }}
             style={{
               flex: 1,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               gap: "8px",
-              padding: "8px 10px",
+              padding: "10px 14px",
               borderRadius: "8px",
-              border: "none",
-              background: docSection === "webhooks" ? "var(--accent-color)" : "transparent",
-              color: docSection === "webhooks" ? "#fff" : "var(--text-secondary)",
+              border: docSection === "webhooks" ? "1px solid rgba(139, 92, 246, 0.5)" : "1px solid transparent",
+              background: docSection === "webhooks" 
+                ? "linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)" 
+                : "transparent",
+              color: docSection === "webhooks" ? "#ffffff" : "var(--text-secondary)",
+              boxShadow: docSection === "webhooks" ? "0 4px 14px rgba(99, 102, 241, 0.35)" : "none",
               fontSize: "13px",
               fontWeight: 600,
               cursor: "pointer",
-              transition: "all 0.2s"
+              transition: "all 0.2s ease"
             }}
           >
-            <Webhook size={14} />
+            <Webhook size={14} style={{ opacity: docSection === "webhooks" ? 1 : 0.7 }} />
             Webhooks
           </button>
         </div>
@@ -650,16 +754,21 @@ export default function DocsPage() {
                   return (
                     <button
                       key={ep.id}
-                      onClick={() => setActiveTab(ep.id)}
+                      onClick={() => {
+                        setActiveTab(ep.id);
+                        updateUrl("endpoints", ep.id);
+                      }}
                       style={{
                         display: "flex", alignItems: "center", gap: "10px", padding: "10px 12px",
-                        borderRadius: "8px", border: "none", background: isActive ? "rgba(255,255,255,0.1)" : "transparent",
-                        color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
+                        borderRadius: "8px", border: "none", 
+                        background: isActive ? "rgba(99, 102, 241, 0.15)" : "transparent",
+                        borderLeft: isActive ? "3px solid #6366f1" : "3px solid transparent",
+                        color: isActive ? "#ffffff" : "var(--text-secondary)",
                         cursor: "pointer", fontWeight: isActive ? 600 : 400, textAlign: "left", transition: "all 0.2s ease"
                       }}
                       className="sidebar-btn"
                     >
-                      <Icon size={16} />
+                      <Icon size={16} style={{ color: isActive ? "#818cf8" : "inherit" }} />
                       {ep.label}
                     </button>
                   );
@@ -680,17 +789,22 @@ export default function DocsPage() {
                       return (
                         <button
                           key={item.id}
-                          onClick={() => setActiveWebhook(item.id)}
+                          onClick={() => {
+                            setActiveWebhook(item.id);
+                            updateUrl("webhooks", item.id);
+                          }}
                           style={{
                             display: "flex", alignItems: "center", gap: "10px", padding: "9px 12px",
-                            borderRadius: "8px", border: "none", background: isActive ? "rgba(255,255,255,0.12)" : "transparent",
-                            color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
+                            borderRadius: "8px", border: "none", 
+                            background: isActive ? "rgba(99, 102, 241, 0.15)" : "transparent",
+                            borderLeft: isActive ? "3px solid #8b5cf6" : "3px solid transparent",
+                            color: isActive ? "#ffffff" : "var(--text-secondary)",
                             cursor: "pointer", fontWeight: isActive ? 600 : 400, textAlign: "left", transition: "all 0.2s ease",
                             fontSize: "13px"
                           }}
                           className="sidebar-btn"
                         >
-                          <Icon size={15} style={{ opacity: isActive ? 1 : 0.7 }} />
+                          <Icon size={15} style={{ opacity: isActive ? 1 : 0.7, color: isActive ? "#a78bfa" : "inherit" }} />
                           <span style={{ fontFamily: item.event ? "monospace" : "inherit" }}>{item.label}</span>
                         </button>
                       );
@@ -705,13 +819,135 @@ export default function DocsPage() {
 
       {/* Main Content Area */}
       <main className="main-content" style={{ padding: "40px 60px", flex: 1, minWidth: 0 }}>
+        {/* Barra Superior de Ações com Ferramentas para IA */}
+        <div 
+          style={{ 
+            display: "flex", 
+            alignItems: "center", 
+            justifyContent: "space-between", 
+            marginBottom: "24px", 
+            flexWrap: "wrap", 
+            gap: "16px",
+            paddingBottom: "16px",
+            borderBottom: "1px solid var(--glass-border)"
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+            <span 
+              className="badge" 
+              style={{ 
+                backgroundColor: docSection === "endpoints" ? "rgba(16, 185, 129, 0.1)" : "rgba(139, 92, 246, 0.15)", 
+                color: docSection === "endpoints" ? "var(--success-color)" : (currentWebhookData.badgeColor || "var(--accent-color)"), 
+                fontSize: "13px", 
+                padding: "6px 14px", 
+                borderRadius: "99px", 
+                fontWeight: "bold",
+                border: `1px solid ${docSection === "endpoints" ? "rgba(16, 185, 129, 0.2)" : (currentWebhookData.badgeColor + "33")}`
+              }}
+            >
+              {docSection === "endpoints" ? "POST ENDPOINT" : "WEBHOOK EVENT"}
+            </span>
+            <h1 className="page-title" style={{ margin: 0, fontSize: "26px" }}>
+              {docSection === "endpoints" 
+                ? endpoints.find(e => e.id === activeTab)?.label 
+                : currentWebhookData.title}
+            </h1>
+          </div>
+
+          {/* Botões Específicos para Enviar à IA */}
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <button
+              onClick={handleCopyAiLink}
+              className="btn-secondary"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                fontSize: "13px",
+                padding: "8px 14px",
+                borderRadius: "8px",
+                border: "1px solid rgba(99, 102, 241, 0.4)",
+                background: "rgba(99, 102, 241, 0.1)",
+                color: "#a5b4fc",
+                cursor: "pointer",
+                transition: "all 0.2s"
+              }}
+              title="Copia uma URL de dados em Markdown limpo para colar no ChatGPT, Claude, Gemini ou Cursor"
+            >
+              {copiedAiLink ? <Check size={14} color="#10b981" /> : <Bot size={14} />}
+              {copiedAiLink ? "Link IA Copiado!" : "Copiar Link para IA"}
+            </button>
+
+            <button
+              onClick={handleCopyPageLink}
+              className="btn-secondary"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                fontSize: "13px",
+                padding: "8px 14px",
+                borderRadius: "8px",
+                border: "1px solid var(--glass-border)",
+                color: "var(--text-secondary)",
+                cursor: "pointer"
+              }}
+              title="Copia a URL desta página exatamente no evento/endpoint selecionado"
+            >
+              {copiedPageLink ? <Check size={14} color="#10b981" /> : <Share2 size={14} />}
+              {copiedPageLink ? "Link Copiado!" : "Compartilhar Link"}
+            </button>
+
+            <a
+              href={getAiMarkdownUrl()}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-secondary"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                fontSize: "13px",
+                padding: "8px 14px",
+                borderRadius: "8px",
+                border: "1px solid var(--glass-border)",
+                color: "var(--text-secondary)",
+                textDecoration: "none"
+              }}
+              title="Abre a documentação direta em Markdown técnico para leitura humana ou por IA"
+            >
+              <ExternalLink size={14} />
+              Ver Markdown
+            </a>
+          </div>
+        </div>
+
+        {/* Banner Informativo quando um link foi copiado */}
+        {(copiedAiLink || copiedPageLink) && (
+          <div 
+            style={{ 
+              marginBottom: "20px", 
+              padding: "10px 16px", 
+              background: "rgba(16, 185, 129, 0.12)", 
+              border: "1px solid rgba(16, 185, 129, 0.3)", 
+              borderRadius: "8px",
+              color: "#34d399",
+              fontSize: "13px",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px"
+            }}
+          >
+            <CheckCircle2 size={16} />
+            {copiedAiLink 
+              ? "Link em Markdown limpo copiado! Você pode colar este link no ChatGPT, Claude ou Cursor para a IA entender e codificar com base neste evento específico."
+              : "URL parametrizada copiada! Ao abrir este link, o navegador ou a IA cairá exatamente nesta aba selecionada."}
+          </div>
+        )}
+
         {docSection === "endpoints" ? (
           /* ── VIEW: ENDPOINTS REST ─────────────────────────────────────────── */
           <div className="animate-fade-in">
-            <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "8px" }}>
-              <span className="badge" style={{ backgroundColor: "rgba(16, 185, 129, 0.1)", color: "var(--success-color)", fontSize: "14px", padding: "6px 12px", borderRadius: "99px", fontWeight: "bold" }}>POST</span>
-              <h1 className="page-title">{endpoints.find(e => e.id === activeTab)?.label}</h1>
-            </div>
             <div style={{ fontFamily: "monospace", fontSize: "15px", color: "var(--text-secondary)", marginBottom: "40px", padding: "12px 16px", background: "rgba(0,0,0,0.3)", borderRadius: "8px", border: "1px solid var(--glass-border)" }}>
               {currentEndpointData.baseUrl}
             </div>
@@ -838,24 +1074,6 @@ console.log(data);`}
         ) : (
           /* ── VIEW: WEBHOOKS & EVENTOS ─────────────────────────────────────── */
           <div className="animate-fade-in">
-            <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "12px" }}>
-              <span 
-                className="badge" 
-                style={{ 
-                  backgroundColor: "rgba(139, 92, 246, 0.15)", 
-                  color: currentWebhookData.badgeColor || "var(--accent-color)", 
-                  fontSize: "13px", 
-                  padding: "6px 14px", 
-                  borderRadius: "99px", 
-                  fontWeight: "bold",
-                  border: `1px solid ${currentWebhookData.badgeColor}33`
-                }}
-              >
-                WEBHOOK EVENT
-              </span>
-              <h1 className="page-title">{currentWebhookData.title}</h1>
-            </div>
-
             <p style={{ color: "var(--text-secondary)", fontSize: "15px", lineHeight: 1.6, marginBottom: "32px", maxWidth: "900px" }}>
               {currentWebhookData.description}
             </p>
