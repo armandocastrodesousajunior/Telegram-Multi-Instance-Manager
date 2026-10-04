@@ -341,19 +341,19 @@ export async function GET(req: NextRequest) {
       ]
     },
     "action-send": {
-      name: "Enviar Ação Genérica (5s Padrão Telegram)",
+      name: "Enviar Ação Genérica (Send Chat Action)",
       category: "actions",
       method: "POST",
       url: `${origin}/api/v1/:instanceId/send/action`,
       altUrl: `${origin}/api/v1/:instanceId/action`,
-      description: "Envia um único sinal de ação para o chat do Telegram. Permanece ativo na tela do usuário pelo tempo padrão do protocolo (~5 segundos) ou até a próxima mensagem ser enviada. Sem loops ou timers no servidor.",
+      description: "Envia um sinal de ação para o chat do Telegram. Permanece ativo na tela do usuário pelo tempo padrão do protocolo ou até a próxima mensagem ser enviada. Sem loops ou timers no servidor.",
       body: [
         { field: "chatId", type: "string | number", required: true, description: "Telefone com DDI/DDD, @username ou chat ID numérico" },
         { field: "action", type: "string", required: false, description: "Tipo da ação ('typing', 'record_audio', 'upload_audio', 'record_video', 'upload_video', 'upload_photo', 'upload_document', 'choose_sticker', 'find_location', 'record_video_note', 'cancel'). Padrão: 'typing'" }
       ]
     },
     "action-loop": {
-      name: "Loop Contínuo de Ação (Com Duração)",
+      name: "Loop Contínuo de Ação (Chat Action Loop)",
       category: "actions",
       method: "POST",
       url: `${origin}/api/v1/:instanceId/send/action/loop`,
@@ -367,111 +367,111 @@ export async function GET(req: NextRequest) {
       ]
     },
     "action-typing": {
-      name: "Ação: Digitando (Typing - 5s)",
+      name: "Ação: Digitando (Typing)",
       category: "actions",
       method: "POST",
       url: `${origin}/api/v1/:instanceId/send/action/typing`,
       altUrl: `${origin}/api/v1/:instanceId/action/typing`,
-      description: "Envia um sinal de 'digitando...' para o chat. Dura naturalmente ~5 segundos no Telegram (sem loop).",
+      description: "Envia um sinal de 'digitando...' para o chat do Telegram (sem loop).",
       body: [
         { field: "chatId", type: "string | number", required: true, description: "Destinatário" }
       ]
     },
     "action-record-audio": {
-      name: "Ação: Gravando Áudio (Record Audio - 5s)",
+      name: "Ação: Gravando Áudio (Record Audio)",
       category: "actions",
       method: "POST",
       url: `${origin}/api/v1/:instanceId/send/action/record_audio`,
       altUrl: `${origin}/api/v1/:instanceId/action/record_audio`,
-      description: "Envia um sinal de 'gravando áudio...' para o chat. Dura naturalmente ~5 segundos no Telegram (sem loop).",
+      description: "Envia um sinal de 'gravando áudio...' para o chat do Telegram (sem loop).",
       body: [
         { field: "chatId", type: "string | number", required: true, description: "Destinatário" }
       ]
     },
     "action-upload-audio": {
-      name: "Ação: Enviando Áudio (Upload Audio - 5s)",
+      name: "Ação: Enviando Áudio (Upload Audio)",
       category: "actions",
       method: "POST",
       url: `${origin}/api/v1/:instanceId/send/action/upload_audio`,
       altUrl: `${origin}/api/v1/:instanceId/action/upload_audio`,
-      description: "Envia um sinal de 'enviando áudio...' para o chat. Dura naturalmente ~5 segundos no Telegram (sem loop).",
+      description: "Envia um sinal de 'enviando áudio...' para o chat do Telegram (sem loop).",
       body: [
         { field: "chatId", type: "string | number", required: true, description: "Destinatário" }
       ]
     },
     "action-record-video": {
-      name: "Ação: Gravando Vídeo (Record Video - 5s)",
+      name: "Ação: Gravando Vídeo (Record Video)",
       category: "actions",
       method: "POST",
       url: `${origin}/api/v1/:instanceId/send/action/record_video`,
       altUrl: `${origin}/api/v1/:instanceId/action/record_video`,
-      description: "Envia um sinal de 'gravando vídeo...' para o chat. Dura naturalmente ~5 segundos no Telegram (sem loop).",
+      description: "Envia um sinal de 'gravando vídeo...' para o chat do Telegram (sem loop).",
       body: [
         { field: "chatId", type: "string | number", required: true, description: "Destinatário" }
       ]
     },
     "action-upload-video": {
-      name: "Ação: Enviando Vídeo (Upload Video - 5s)",
+      name: "Ação: Enviando Vídeo (Upload Video)",
       category: "actions",
       method: "POST",
       url: `${origin}/api/v1/:instanceId/send/action/upload_video`,
       altUrl: `${origin}/api/v1/:instanceId/action/upload_video`,
-      description: "Envia um sinal de 'enviando vídeo...' para o chat. Dura naturalmente ~5 segundos no Telegram (sem loop).",
+      description: "Envia um sinal de 'enviando vídeo...' para o chat do Telegram (sem loop).",
       body: [
         { field: "chatId", type: "string | number", required: true, description: "Destinatário" }
       ]
     },
     "action-upload-photo": {
-      name: "Ação: Enviando Foto (Upload Photo - 5s)",
+      name: "Ação: Enviando Foto (Upload Photo)",
       category: "actions",
       method: "POST",
       url: `${origin}/api/v1/:instanceId/send/action/upload_photo`,
       altUrl: `${origin}/api/v1/:instanceId/action/upload_photo`,
-      description: "Envia um sinal de 'enviando foto...' para o chat. Dura naturalmente ~5 segundos no Telegram (sem loop).",
+      description: "Envia um sinal de 'enviando foto...' para o chat do Telegram (sem loop).",
       body: [
         { field: "chatId", type: "string | number", required: true, description: "Destinatário" }
       ]
     },
     "action-upload-document": {
-      name: "Ação: Enviando Arquivo (Upload Document - 5s)",
+      name: "Ação: Enviando Arquivo (Upload Document)",
       category: "actions",
       method: "POST",
       url: `${origin}/api/v1/:instanceId/send/action/upload_document`,
       altUrl: `${origin}/api/v1/:instanceId/action/upload_document`,
-      description: "Envia um sinal de 'enviando arquivo...' para o chat. Dura naturalmente ~5 segundos no Telegram (sem loop).",
+      description: "Envia um sinal de 'enviando arquivo...' para o chat do Telegram (sem loop).",
       body: [
         { field: "chatId", type: "string | number", required: true, description: "Destinatário" }
       ]
     },
     "action-choose-sticker": {
-      name: "Ação: Escolhendo Sticker (Choose Sticker - 5s)",
+      name: "Ação: Escolhendo Sticker (Choose Sticker)",
       category: "actions",
       method: "POST",
       url: `${origin}/api/v1/:instanceId/send/action/choose_sticker`,
       altUrl: `${origin}/api/v1/:instanceId/action/choose_sticker`,
-      description: "Envia um sinal de 'escolhendo sticker...' para o chat. Dura naturalmente ~5 segundos no Telegram (sem loop).",
+      description: "Envia um sinal de 'escolhendo sticker...' para o chat do Telegram (sem loop).",
       body: [
         { field: "chatId", type: "string | number", required: true, description: "Destinatário" }
       ]
     },
     "action-find-location": {
-      name: "Ação: Localização (Find Location - 5s)",
+      name: "Ação: Localização (Find Location)",
       category: "actions",
       method: "POST",
       url: `${origin}/api/v1/:instanceId/send/action/find_location`,
       altUrl: `${origin}/api/v1/:instanceId/action/find_location`,
-      description: "Envia um sinal de 'compartilhando localização...' para o chat. Dura naturalmente ~5 segundos no Telegram (sem loop).",
+      description: "Envia um sinal de 'compartilhando localização...' para o chat do Telegram (sem loop).",
       body: [
         { field: "chatId", type: "string | number", required: true, description: "Destinatário" }
       ]
     },
     "action-record-round": {
-      name: "Ação: Gravando Vídeo Redondo (Record Video Note - 5s)",
+      name: "Ação: Gravando Vídeo Redondo (Record Video Note)",
       category: "actions",
       method: "POST",
       url: `${origin}/api/v1/:instanceId/send/action/record_video_note`,
       altUrl: `${origin}/api/v1/:instanceId/action/record_video_note`,
-      description: "Envia um sinal de 'gravando mensagem circular de vídeo...' para o chat. Dura naturalmente ~5 segundos no Telegram (sem loop).",
+      description: "Envia um sinal de 'gravando mensagem circular de vídeo...' para o chat do Telegram (sem loop).",
       body: [
         { field: "chatId", type: "string | number", required: true, description: "Destinatário" }
       ]

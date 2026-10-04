@@ -132,18 +132,18 @@ export default function DocsPage() {
     {
       name: "Envio de Ações",
       items: [
-        { id: "action-send", label: "Enviar Ação Genérica (5s)", method: "POST", icon: Activity },
+        { id: "action-send", label: "Enviar Ação Genérica", method: "POST", icon: Activity },
         { id: "action-loop", label: "Loop Contínuo de Ação", method: "POST", icon: Radio },
-        { id: "action-typing", label: "Ação: Digitando (5s)", method: "POST", icon: Edit3 },
-        { id: "action-record-audio", label: "Ação: Gravando Áudio (5s)", method: "POST", icon: Mic },
-        { id: "action-upload-audio", label: "Ação: Enviando Áudio (5s)", method: "POST", icon: Music },
-        { id: "action-record-video", label: "Ação: Gravando Vídeo (5s)", method: "POST", icon: Video },
-        { id: "action-upload-video", label: "Ação: Enviando Vídeo (5s)", method: "POST", icon: Video },
-        { id: "action-upload-photo", label: "Ação: Enviando Foto (5s)", method: "POST", icon: ImageIcon },
-        { id: "action-upload-document", label: "Ação: Enviando Arquivo (5s)", method: "POST", icon: FileText },
-        { id: "action-choose-sticker", label: "Ação: Escolhendo Sticker (5s)", method: "POST", icon: Play },
-        { id: "action-find-location", label: "Ação: Localização (5s)", method: "POST", icon: Radio },
-        { id: "action-record-round", label: "Ação: Vídeo Redondo (5s)", method: "POST", icon: Video },
+        { id: "action-typing", label: "Ação: Digitando", method: "POST", icon: Edit3 },
+        { id: "action-record-audio", label: "Ação: Gravando Áudio", method: "POST", icon: Mic },
+        { id: "action-upload-audio", label: "Ação: Enviando Áudio", method: "POST", icon: Music },
+        { id: "action-record-video", label: "Ação: Gravando Vídeo", method: "POST", icon: Video },
+        { id: "action-upload-video", label: "Ação: Enviando Vídeo", method: "POST", icon: Video },
+        { id: "action-upload-photo", label: "Ação: Enviando Foto", method: "POST", icon: ImageIcon },
+        { id: "action-upload-document", label: "Ação: Enviando Arquivo", method: "POST", icon: FileText },
+        { id: "action-choose-sticker", label: "Ação: Escolhendo Sticker", method: "POST", icon: Play },
+        { id: "action-find-location", label: "Ação: Localização", method: "POST", icon: Radio },
+        { id: "action-record-round", label: "Ação: Vídeo Redondo", method: "POST", icon: Video },
         { id: "action-cancel", label: "Cancelar Ação (Stop)", method: "POST", icon: PhoneOff },
       ]
     }
@@ -358,13 +358,13 @@ export default function DocsPage() {
 
       case "action-send":
         return {
-          title: "Enviar Ação Genérica (5s Padrão Telegram)",
+          title: "Enviar Ação Genérica (Send Chat Action)",
           method: "POST",
           category: "actions",
           badgeColor: "#ec4899",
           baseUrl: `${origin}/api/v1/[instanceId]/send/action`,
           altUrl: `${origin}/api/v1/[instanceId]/action`,
-          description: "Envia um único sinal de ação para o chat do Telegram. Permanece ativo na tela do usuário pelo tempo nativo do protocolo (~5 segundos) ou até você enviar a próxima mensagem. Sem loops ou timers adicionais no servidor.",
+          description: "Envia um sinal de ação para o chat do Telegram. Permanece ativo na tela do usuário pelo tempo nativo do protocolo ou até você enviar a próxima mensagem. Sem loops ou timers adicionais no servidor.",
           authType: "API Token da Instância",
           authDescription: "Requer o token da instância retornado na listagem de instâncias (ou ACCESS_TOKEN).",
           payloadFields: [
@@ -390,7 +390,7 @@ export default function DocsPage() {
 
       case "action-loop":
         return {
-          title: "Loop Contínuo de Ação (Com Duração)",
+          title: "Loop Contínuo de Ação (Chat Action Loop)",
           method: "POST",
           category: "actions",
           badgeColor: "#8b5cf6",
@@ -437,16 +437,16 @@ export default function DocsPage() {
       case "action-record-round":
       case "action-cancel": {
         const actionTypeMap: Record<string, { typeParam: string; title: string; desc: string }> = {
-          "action-typing": { typeParam: "typing", title: "Ação: Digitando (Typing - 5s)", desc: "Envia um sinal de 'digitando...' para o chat. Dura naturalmente ~5 segundos no Telegram (sem loop)." },
-          "action-record-audio": { typeParam: "record_audio", title: "Ação: Gravando Áudio (Record Audio - 5s)", desc: "Envia um sinal de 'gravando áudio...' para o chat. Dura naturalmente ~5 segundos no Telegram (sem loop)." },
-          "action-upload-audio": { typeParam: "upload_audio", title: "Ação: Enviando Áudio (Upload Audio - 5s)", desc: "Envia um sinal de 'enviando áudio...' para o chat. Dura naturalmente ~5 segundos no Telegram (sem loop)." },
-          "action-record-video": { typeParam: "record_video", title: "Ação: Gravando Vídeo (Record Video - 5s)", desc: "Envia um sinal de 'gravando vídeo...' para o chat. Dura naturalmente ~5 segundos no Telegram (sem loop)." },
-          "action-upload-video": { typeParam: "upload_video", title: "Ação: Enviando Vídeo (Upload Video - 5s)", desc: "Envia um sinal de 'enviando vídeo...' para o chat. Dura naturalmente ~5 segundos no Telegram (sem loop)." },
-          "action-upload-photo": { typeParam: "upload_photo", title: "Ação: Enviando Foto (Upload Photo - 5s)", desc: "Envia um sinal de 'enviando foto...' para o chat. Dura naturalmente ~5 segundos no Telegram (sem loop)." },
-          "action-upload-document": { typeParam: "upload_document", title: "Ação: Enviando Arquivo (Upload Document - 5s)", desc: "Envia um sinal de 'enviando arquivo...' para o chat. Dura naturalmente ~5 segundos no Telegram (sem loop)." },
-          "action-choose-sticker": { typeParam: "choose_sticker", title: "Ação: Escolhendo Sticker (Choose Sticker - 5s)", desc: "Envia um sinal de 'escolhendo sticker...' para o chat. Dura naturalmente ~5 segundos no Telegram (sem loop)." },
-          "action-find-location": { typeParam: "find_location", title: "Ação: Localização (Find Location - 5s)", desc: "Envia um sinal de 'compartilhando localização...' para o chat. Dura naturalmente ~5 segundos no Telegram (sem loop)." },
-          "action-record-round": { typeParam: "record_video_note", title: "Ação: Vídeo Redondo (Video Note - 5s)", desc: "Envia um sinal de 'gravando mensagem circular de vídeo...' para o chat. Dura naturalmente ~5 segundos no Telegram (sem loop)." },
+          "action-typing": { typeParam: "typing", title: "Ação: Digitando (Typing)", desc: "Envia um sinal de 'digitando...' para o chat. Permanece ativo pelo tempo nativo do Telegram ou até você enviar a próxima mensagem." },
+          "action-record-audio": { typeParam: "record_audio", title: "Ação: Gravando Áudio (Record Audio)", desc: "Envia um sinal de 'gravando áudio...' para o chat." },
+          "action-upload-audio": { typeParam: "upload_audio", title: "Ação: Enviando Áudio (Upload Audio)", desc: "Envia um sinal de 'enviando áudio...' para o chat." },
+          "action-record-video": { typeParam: "record_video", title: "Ação: Gravando Vídeo (Record Video)", desc: "Envia um sinal de 'gravando vídeo...' para o chat." },
+          "action-upload-video": { typeParam: "upload_video", title: "Ação: Enviando Vídeo (Upload Video)", desc: "Envia um sinal de 'enviando vídeo...' para o chat." },
+          "action-upload-photo": { typeParam: "upload_photo", title: "Ação: Enviando Foto (Upload Photo)", desc: "Envia um sinal de 'enviando foto...' para o chat." },
+          "action-upload-document": { typeParam: "upload_document", title: "Ação: Enviando Arquivo (Upload Document)", desc: "Envia um sinal de 'enviando arquivo...' para o chat." },
+          "action-choose-sticker": { typeParam: "choose_sticker", title: "Ação: Escolhendo Sticker (Choose Sticker)", desc: "Envia um sinal de 'escolhendo sticker...' para o chat." },
+          "action-find-location": { typeParam: "find_location", title: "Ação: Localização (Find Location)", desc: "Envia um sinal de 'compartilhando localização...' para o chat." },
+          "action-record-round": { typeParam: "record_video_note", title: "Ação: Vídeo Redondo (Video Note)", desc: "Envia um sinal de 'gravando mensagem circular de vídeo...' para o chat." },
           "action-cancel": { typeParam: "cancel", title: "Cancelar Ação (Cancel Action)", desc: "Cancela e limpa imediatamente qualquer status de ação ativo na conversa." }
         };
         const cur = actionTypeMap[id];
