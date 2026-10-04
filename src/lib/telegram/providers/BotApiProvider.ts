@@ -1,6 +1,6 @@
 import { Instance } from '@prisma/client';
 import { ITelegramProvider, MediaOptions, MessageOptions, ViewOnceOptions } from './IProvider';
-import { SimulationResult } from '../actions';
+import { SimulationResult, normalizeActionName, getBotApiAction } from '../actions';
 import { prisma } from '../../db';
 import { getCachedInstanceSettings } from '../utils';
 import fs from 'fs';
@@ -289,5 +289,43 @@ export class BotApiProvider implements ITelegramProvider {
     }
 
     return { peerResolution: botPeerResolution, simulationMs: Date.now() - tSim };
+  }
+
+  async sendChatAction(chatId: string | number, action: string, durationSeconds?: number, wait?: boolean) {
+    const normalized = normalizeActionName(action);
+    const botAction = getBotApiAction(normalized);
+
+    const botPeerResolution = { layerHit: -1 as any, layerName: 'Bot HTTP API' as any, resolveMs: 0 };
+    const tStart = Date.now();
+
+    const isCancel = normalized === 'cancel';
+    const duration = (!isCancel && durationSeconds !== undefined && durationSeconds > 0)
+      ? Math.min(durationSeconds * 1000, 60000)
+      : 0;
+
+    if (duration > 0) {
+      const runLoop = async () => {
+        const targetEndTime = Date.now() + duration;
+        while (Date.now() < targetEndTime) {
+          this.callApi('sendChatAction', { chat_id: chatId, action: botAction }).catch(() => {});
+          const remaining = targetEndTime - Date.now();
+          if (remaining <= 0) break;
+          await new Promise(r => setTimeout(r, Math.min(4000, remaining)));
+        }
+      };
+
+      if (wait) {
+        await runLoop();
+        return { success: true, action: normalized, durationMs: Date.now() - tStart, peerResolution: botPeerResolution };
+      } else {
+        runLoop().catch(() => {});
+        return { success: true, action: normalized, durationMs: duration, peerResolution: botPeerResolution };
+      }
+    } else {
+      if (!isCancel) {
+        await this.callApi('sendChatAction', { chat_id: chatId, action: botAction });
+      }
+      return { success: true, action: normalized, durationMs: Date.now() - tStart, peerResolution: botPeerResolution };
+    }
   }
 }

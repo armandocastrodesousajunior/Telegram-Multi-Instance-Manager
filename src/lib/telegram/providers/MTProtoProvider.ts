@@ -1,9 +1,11 @@
 import { Instance } from '@prisma/client';
 import { ITelegramProvider, MediaOptions, MessageOptions, ViewOnceOptions } from './IProvider';
 import { telegramManager } from '../client';
-import { simulateTyping, simulateFileAction } from '../actions';
+import { simulateTyping, simulateFileAction, normalizeActionName, getTelegramActionClass } from '../actions';
 import { getOrFetchEntity } from '../utils';
 import { sendViewOnceFile } from '../viewOnce';
+import { getWorkerPool } from '../../workers/WorkerPool';
+import { Api } from 'telegram';
 
 export class MTProtoProvider implements ITelegramProvider {
   constructor(private instance: Instance) {}
@@ -64,5 +66,42 @@ export class MTProtoProvider implements ITelegramProvider {
   async simulateFileAction(chatId: string | number, action: 'document' | 'photo' | 'video' | 'audio', durationMs?: number) {
     const client = await telegramManager.getClient(this.instance.id);
     return simulateFileAction(client, this.instance.id, chatId.toString(), action, durationMs);
+  }
+
+  async sendChatAction(chatId: string | number, action: string, durationSeconds?: number, wait?: boolean) {
+    const client = await telegramManager.getClient(this.instance.id);
+    const { entity: peer, resolution: peerResolution } = await getOrFetchEntity(client, chatId);
+    const normalized = normalizeActionName(action);
+    const telegramAction = getTelegramActionClass(normalized);
+
+    const isCancel = normalized === 'cancel';
+    const duration = (!isCancel && durationSeconds !== undefined && durationSeconds > 0)
+      ? Math.min(durationSeconds * 1000, 60000)
+      : 0;
+
+    const tStart = Date.now();
+
+    if (duration > 0) {
+      if (wait) {
+        const { simulationMs } = await getWorkerPool().runSimulation(
+          duration,
+          () => {
+            client.invoke(new Api.messages.SetTyping({ peer, action: telegramAction })).catch(() => {});
+          }
+        );
+        return { success: true, action: normalized, durationMs: simulationMs, peerResolution };
+      } else {
+        getWorkerPool().runSimulation(
+          duration,
+          () => {
+            client.invoke(new Api.messages.SetTyping({ peer, action: telegramAction })).catch(() => {});
+          }
+        ).catch(() => {});
+        return { success: true, action: normalized, durationMs: duration, peerResolution };
+      }
+    } else {
+      await client.invoke(new Api.messages.SetTyping({ peer, action: telegramAction }));
+      return { success: true, action: normalized, durationMs: Date.now() - tStart, peerResolution };
+    }
   }
 }

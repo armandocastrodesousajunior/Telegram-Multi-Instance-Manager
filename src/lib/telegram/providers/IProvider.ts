@@ -51,4 +51,9 @@ export interface ITelegramProvider {
    * Simula envio de arquivos
    */
   simulateFileAction(chatId: string | number, action: 'document' | 'photo' | 'video' | 'audio', durationMs?: number): Promise<SimulationResult>;
+
+  /**
+   * Envia uma ação de chat ao Telegram (digitando, gravando áudio, enviando foto, etc.)
+   */
+  sendChatAction(chatId: string | number, action: string, durationSeconds?: number, wait?: boolean): Promise<{ success: boolean; action: string; durationMs: number; peerResolution?: any }>;
 }

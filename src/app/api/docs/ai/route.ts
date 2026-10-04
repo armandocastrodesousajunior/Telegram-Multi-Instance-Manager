@@ -244,6 +244,7 @@ export async function GET(req: NextRequest) {
   const endpointDocs: Record<string, any> = {
     text: {
       name: "Send Text",
+      category: "messages",
       method: "POST",
       url: `${origin}/api/v1/:instanceId/send/text`,
       description: "Envia uma mensagem de texto simples ou formatada com simulação de digitação.",
@@ -256,6 +257,7 @@ export async function GET(req: NextRequest) {
     },
     image: {
       name: "Send Image",
+      category: "messages",
       method: "POST",
       url: `${origin}/api/v1/:instanceId/send/image`,
       description: "Envia uma foto/imagem com suporte a legenda e modo visualização única (View-Once).",
@@ -269,6 +271,7 @@ export async function GET(req: NextRequest) {
     },
     video: {
       name: "Send Video",
+      category: "messages",
       method: "POST",
       url: `${origin}/api/v1/:instanceId/send/video`,
       description: "Envia um vídeo MP4 com simulação de envio e suporte a View-Once.",
@@ -279,14 +282,49 @@ export async function GET(req: NextRequest) {
         { field: "viewOnce", type: "boolean", required: false, description: "Se true, autodestrói após visualização" }
       ]
     },
+    audio: {
+      name: "Send Audio",
+      category: "messages",
+      method: "POST",
+      url: `${origin}/api/v1/:instanceId/send/audio`,
+      description: "Envia um arquivo de áudio com reprodução comum.",
+      body: [
+        { field: "chatId", type: "string | number", required: true, description: "Destinatário" },
+        { field: "url", type: "string", required: true, description: "URL do arquivo de áudio (MP3, WAV, etc.)" }
+      ]
+    },
     voice: {
       name: "Send Voice Note",
+      category: "messages",
       method: "POST",
       url: `${origin}/api/v1/:instanceId/send/voice`,
       description: "Envia um áudio gravado no microfone (Voice Note) com simulação de gravando áudio.",
       body: [
         { field: "chatId", type: "string | number", required: true, description: "Destinatário" },
         { field: "url", type: "string", required: true, description: "URL do áudio (MP3, OGG, etc.)" }
+      ]
+    },
+    document: {
+      name: "Send Document",
+      category: "messages",
+      method: "POST",
+      url: `${origin}/api/v1/:instanceId/send/document`,
+      description: "Envia um arquivo ou documento (PDF, ZIP, DOCX, etc.) com simulação de envio.",
+      body: [
+        { field: "chatId", type: "string | number", required: true, description: "Destinatário" },
+        { field: "url", type: "string", required: true, description: "URL do arquivo" },
+        { field: "caption", type: "string", required: false, description: "Legenda opcional" }
+      ]
+    },
+    smart: {
+      name: "Smart Flow",
+      category: "messages",
+      method: "POST",
+      url: `${origin}/api/v1/:instanceId/send/smart`,
+      description: "Dispara fluxos inteligentes dinâmicos interpolados com tags de mídia (<voice>, <image>, etc.).",
+      body: [
+        { field: "chatId", type: "string | number", required: true, description: "Destinatário" },
+        { field: "content", type: "string", required: true, description: "Texto com interpolação de tags" }
       ]
     },
     call: {
@@ -300,6 +338,161 @@ export async function GET(req: NextRequest) {
         { field: "durationSeconds", type: "number", required: false, description: "Tempo em segundos conectado após atendimento antes de desligar (padrão: 5)" },
         { field: "timeoutSeconds", type: "number", required: false, description: "Tempo limite tocando antes de considerar missed (padrão: 30)" },
         { field: "video", type: "boolean", required: false, description: "Se true, toca com ícone de chamada de vídeo (padrão: false)" }
+      ]
+    },
+    "action-send": {
+      name: "Enviar Ação Genérica (Send Chat Action)",
+      category: "actions",
+      method: "POST",
+      url: `${origin}/api/v1/:instanceId/send/action`,
+      altUrl: `${origin}/api/v1/:instanceId/action`,
+      description: "Envia qualquer status de ação de chat aceito pelo Telegram (digitando, gravando áudio, enviando foto/vídeo/documento, escolhendo sticker, etc.). Suporta repetição contínua por N segundos em background ou síncrono.",
+      body: [
+        { field: "chatId", type: "string | number", required: true, description: "Telefone com DDI/DDD, @username ou chat ID numérico" },
+        { field: "action", type: "string", required: false, description: "Tipo da ação ('typing', 'record_audio', 'upload_audio', 'record_video', 'upload_video', 'upload_photo', 'upload_document', 'choose_sticker', 'find_location', 'record_video_note', 'cancel'). Padrão: 'typing'" },
+        { field: "durationSeconds", type: "number", required: false, description: "Duração em segundos para manter a ação ativa repetindo no Telegram (máx 60s). Se omitido, envia uma única vez (~5s no Telegram)" },
+        { field: "wait", type: "boolean", required: false, description: "Se true, segura a resposta HTTP até o término da duração. Se false (padrão), executa em background" }
+      ]
+    },
+    "action-typing": {
+      name: "Ação: Digitando (Typing)",
+      category: "actions",
+      method: "POST",
+      url: `${origin}/api/v1/:instanceId/send/action/typing`,
+      altUrl: `${origin}/api/v1/:instanceId/action/typing`,
+      description: "Simula o status 'digitando...' (typing) no chat do Telegram.",
+      body: [
+        { field: "chatId", type: "string | number", required: true, description: "Destinatário" },
+        { field: "durationSeconds", type: "number", required: false, description: "Duração em segundos da simulação (padrão: 5s)" },
+        { field: "wait", type: "boolean", required: false, description: "Se true, aguarda a duração. Se false (padrão), inicia em background" }
+      ]
+    },
+    "action-record-audio": {
+      name: "Ação: Gravando Áudio (Record Audio)",
+      category: "actions",
+      method: "POST",
+      url: `${origin}/api/v1/:instanceId/send/action/record_audio`,
+      altUrl: `${origin}/api/v1/:instanceId/action/record_audio`,
+      description: "Simula o status 'gravando áudio...' (record voice) no chat do Telegram.",
+      body: [
+        { field: "chatId", type: "string | number", required: true, description: "Destinatário" },
+        { field: "durationSeconds", type: "number", required: false, description: "Duração em segundos da simulação (padrão: 5s)" },
+        { field: "wait", type: "boolean", required: false, description: "Se true, aguarda a duração. Se false (padrão), inicia em background" }
+      ]
+    },
+    "action-upload-audio": {
+      name: "Ação: Enviando Áudio (Upload Audio)",
+      category: "actions",
+      method: "POST",
+      url: `${origin}/api/v1/:instanceId/send/action/upload_audio`,
+      altUrl: `${origin}/api/v1/:instanceId/action/upload_audio`,
+      description: "Simula o status 'enviando áudio...' no chat do Telegram.",
+      body: [
+        { field: "chatId", type: "string | number", required: true, description: "Destinatário" },
+        { field: "durationSeconds", type: "number", required: false, description: "Duração em segundos (padrão: 3s)" },
+        { field: "wait", type: "boolean", required: false, description: "Execução síncrona ou background" }
+      ]
+    },
+    "action-record-video": {
+      name: "Ação: Gravando Vídeo (Record Video)",
+      category: "actions",
+      method: "POST",
+      url: `${origin}/api/v1/:instanceId/send/action/record_video`,
+      altUrl: `${origin}/api/v1/:instanceId/action/record_video`,
+      description: "Simula o status 'gravando vídeo...' no chat do Telegram.",
+      body: [
+        { field: "chatId", type: "string | number", required: true, description: "Destinatário" },
+        { field: "durationSeconds", type: "number", required: false, description: "Duração em segundos (padrão: 5s)" },
+        { field: "wait", type: "boolean", required: false, description: "Execução síncrona ou background" }
+      ]
+    },
+    "action-upload-video": {
+      name: "Ação: Enviando Vídeo (Upload Video)",
+      category: "actions",
+      method: "POST",
+      url: `${origin}/api/v1/:instanceId/send/action/upload_video`,
+      altUrl: `${origin}/api/v1/:instanceId/action/upload_video`,
+      description: "Simula o status 'enviando vídeo...' no chat do Telegram.",
+      body: [
+        { field: "chatId", type: "string | number", required: true, description: "Destinatário" },
+        { field: "durationSeconds", type: "number", required: false, description: "Duração em segundos (padrão: 5s)" },
+        { field: "wait", type: "boolean", required: false, description: "Execução síncrona ou background" }
+      ]
+    },
+    "action-upload-photo": {
+      name: "Ação: Enviando Foto (Upload Photo)",
+      category: "actions",
+      method: "POST",
+      url: `${origin}/api/v1/:instanceId/send/action/upload_photo`,
+      altUrl: `${origin}/api/v1/:instanceId/action/upload_photo`,
+      description: "Simula o status 'enviando foto...' no chat do Telegram.",
+      body: [
+        { field: "chatId", type: "string | number", required: true, description: "Destinatário" },
+        { field: "durationSeconds", type: "number", required: false, description: "Duração em segundos (padrão: 3s)" },
+        { field: "wait", type: "boolean", required: false, description: "Execução síncrona ou background" }
+      ]
+    },
+    "action-upload-document": {
+      name: "Ação: Enviando Arquivo (Upload Document)",
+      category: "actions",
+      method: "POST",
+      url: `${origin}/api/v1/:instanceId/send/action/upload_document`,
+      altUrl: `${origin}/api/v1/:instanceId/action/upload_document`,
+      description: "Simula o status 'enviando arquivo...' no chat do Telegram.",
+      body: [
+        { field: "chatId", type: "string | number", required: true, description: "Destinatário" },
+        { field: "durationSeconds", type: "number", required: false, description: "Duração em segundos (padrão: 3s)" },
+        { field: "wait", type: "boolean", required: false, description: "Execução síncrona ou background" }
+      ]
+    },
+    "action-choose-sticker": {
+      name: "Ação: Escolhendo Sticker (Choose Sticker)",
+      category: "actions",
+      method: "POST",
+      url: `${origin}/api/v1/:instanceId/send/action/choose_sticker`,
+      altUrl: `${origin}/api/v1/:instanceId/action/choose_sticker`,
+      description: "Simula o status 'escolhendo sticker...' no chat do Telegram.",
+      body: [
+        { field: "chatId", type: "string | number", required: true, description: "Destinatário" },
+        { field: "durationSeconds", type: "number", required: false, description: "Duração em segundos (padrão: 3s)" },
+        { field: "wait", type: "boolean", required: false, description: "Execução síncrona ou background" }
+      ]
+    },
+    "action-find-location": {
+      name: "Ação: Localização (Find Location)",
+      category: "actions",
+      method: "POST",
+      url: `${origin}/api/v1/:instanceId/send/action/find_location`,
+      altUrl: `${origin}/api/v1/:instanceId/action/find_location`,
+      description: "Simula o status 'compartilhando localização...' no chat do Telegram.",
+      body: [
+        { field: "chatId", type: "string | number", required: true, description: "Destinatário" },
+        { field: "durationSeconds", type: "number", required: false, description: "Duração em segundos (padrão: 3s)" },
+        { field: "wait", type: "boolean", required: false, description: "Execução síncrona ou background" }
+      ]
+    },
+    "action-record-round": {
+      name: "Ação: Gravando Vídeo Redondo (Record Video Note)",
+      category: "actions",
+      method: "POST",
+      url: `${origin}/api/v1/:instanceId/send/action/record_video_note`,
+      altUrl: `${origin}/api/v1/:instanceId/action/record_video_note`,
+      description: "Simula o status 'gravando mensagem circular de vídeo...' no chat do Telegram.",
+      body: [
+        { field: "chatId", type: "string | number", required: true, description: "Destinatário" },
+        { field: "durationSeconds", type: "number", required: false, description: "Duração em segundos (padrão: 5s)" },
+        { field: "wait", type: "boolean", required: false, description: "Execução síncrona ou background" }
+      ]
+    },
+    "action-cancel": {
+      name: "Cancelar Ação (Cancel Action)",
+      category: "actions",
+      method: "POST",
+      url: `${origin}/api/v1/:instanceId/send/action/cancel`,
+      altUrl: `${origin}/api/v1/:instanceId/action/cancel`,
+      description: "Cancela e limpa imediatamente qualquer status de ação ativo na conversa.",
+      body: [
+        { field: "chatId", type: "string | number", required: true, description: "Destinatário" }
       ]
     },
     "instances-list": {
@@ -499,9 +692,10 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  if (section === 'endpoints' || section === 'admin' || section === 'all') {
+  if (section === 'endpoints' || section === 'admin' || section === 'messages' || section === 'actions' || section === 'all') {
     const adminEndpoints = Object.entries(endpointDocs).filter(([_, item]) => item.category === 'admin');
-    const messageEndpoints = Object.entries(endpointDocs).filter(([_, item]) => item.category !== 'admin');
+    const messageEndpoints = Object.entries(endpointDocs).filter(([_, item]) => item.category === 'messages');
+    const actionEndpoints = Object.entries(endpointDocs).filter(([_, item]) => item.category === 'actions');
 
     if (adminEndpoints.length > 0 && (section === 'admin' || section === 'all' || section === 'endpoints')) {
       md += `## ⚙️ Gerenciamento de Instâncias & Webhooks (Endpoints Administrativos)\n\n`;
@@ -522,11 +716,26 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    if (section !== 'admin') {
-      md += `## 🚀 Envio de Mensagens & Ações (API da Instância)\n\n`;
+    if (messageEndpoints.length > 0 && (section === 'messages' || section === 'all' || section === 'endpoints')) {
+      md += `## 🚀 Envio de Mensagens (API da Instância)\n\n`;
       md += `> 🔑 **Autenticação:** Requer \`Authorization: Bearer <TOKEN_DA_INSTANCIA>\` (ou o ACCESS_TOKEN global).\n\n`;
       for (const [key, item] of messageEndpoints) {
         md += `### \`${item.method} ${item.url}\` (${item.name})\n`;
+        md += `- **Descrição:** ${item.description}\n`;
+        md += `- **Body:**\n`;
+        for (const b of item.body) {
+          md += `  - \`${b.field}\` (${b.type}, ${b.required ? 'obrigatório' : 'opcional'}): ${b.description}\n`;
+        }
+        md += `\n`;
+      }
+    }
+
+    if (actionEndpoints.length > 0 && (section === 'actions' || section === 'all' || section === 'endpoints')) {
+      md += `## ⚡ Envio de Ações de Chat (Chat Actions API)\n\n`;
+      md += `> 🔑 **Autenticação:** Requer \`Authorization: Bearer <TOKEN_DA_INSTANCIA>\` (ou o ACCESS_TOKEN global).\n\n`;
+      for (const [key, item] of actionEndpoints) {
+        md += `### \`${item.method} ${item.url}\` (${item.name})\n`;
+        if (item.altUrl) md += `- **Alias:** \`${item.altUrl}\`\n`;
         md += `- **Descrição:** ${item.description}\n`;
         md += `- **Body:**\n`;
         for (const b of item.body) {

@@ -129,3 +129,144 @@ export async function simulateFileAction(
 
   return { peerResolution, simulationMs };
 }
+
+// ── Helpers de Ações de Chat (Chat Actions) ───────────────────────────────────
+
+export const SUPPORTED_ACTIONS = [
+  'typing',
+  'record_audio',
+  'upload_audio',
+  'record_video',
+  'upload_video',
+  'upload_photo',
+  'upload_document',
+  'choose_sticker',
+  'find_location',
+  'record_video_note',
+  'upload_video_note',
+  'cancel'
+] as const;
+
+export type SupportedAction = typeof SUPPORTED_ACTIONS[number] | string;
+
+export function normalizeActionName(actionName: string): string {
+  const norm = (actionName || '').toLowerCase().replace(/[-_]/g, '');
+  switch (norm) {
+    case 'typing':
+    case 'text':
+      return 'typing';
+    case 'recordaudio':
+    case 'recordingaudio':
+    case 'recordvoice':
+    case 'recordingvoice':
+    case 'voice':
+      return 'record_audio';
+    case 'uploadaudio':
+    case 'uploadingaudio':
+    case 'uploadvoice':
+    case 'uploadingvoice':
+    case 'audio':
+      return 'upload_audio';
+    case 'recordvideo':
+    case 'recordingvideo':
+      return 'record_video';
+    case 'uploadvideo':
+    case 'uploadingvideo':
+    case 'video':
+      return 'upload_video';
+    case 'uploadphoto':
+    case 'uploadingphoto':
+    case 'photo':
+    case 'image':
+      return 'upload_photo';
+    case 'uploaddocument':
+    case 'uploadingdocument':
+    case 'document':
+    case 'file':
+      return 'upload_document';
+    case 'choosesticker':
+    case 'sticker':
+      return 'choose_sticker';
+    case 'findlocation':
+    case 'location':
+    case 'geolocation':
+      return 'find_location';
+    case 'recordround':
+    case 'recordvideonote':
+    case 'recordingvideonote':
+    case 'videonote':
+      return 'record_video_note';
+    case 'uploadround':
+    case 'uploadvideonote':
+    case 'uploadingvideonote':
+      return 'upload_video_note';
+    case 'cancel':
+    case 'stop':
+      return 'cancel';
+    default:
+      return 'typing';
+  }
+}
+
+export function getTelegramActionClass(actionName: string): Api.TypeSendMessageAction {
+  const action = normalizeActionName(actionName);
+  switch (action) {
+    case 'record_audio':
+      return new Api.SendMessageRecordAudioAction();
+    case 'upload_audio':
+      return new Api.SendMessageUploadAudioAction({ progress: 1 });
+    case 'record_video':
+      return new Api.SendMessageRecordVideoAction();
+    case 'upload_video':
+      return new Api.SendMessageUploadVideoAction({ progress: 1 });
+    case 'upload_photo':
+      return new Api.SendMessageUploadPhotoAction({ progress: 1 });
+    case 'upload_document':
+      return new Api.SendMessageUploadDocumentAction({ progress: 1 });
+    case 'choose_sticker':
+      return new Api.SendMessageChooseStickerAction();
+    case 'find_location':
+      return new Api.SendMessageGeoLocationAction();
+    case 'record_video_note':
+      return new Api.SendMessageRecordRoundAction();
+    case 'upload_video_note':
+      return new Api.SendMessageUploadRoundAction({ progress: 1 });
+    case 'cancel':
+      return new Api.SendMessageCancelAction();
+    case 'typing':
+    default:
+      return new Api.SendMessageTypingAction();
+  }
+}
+
+export function getBotApiAction(actionName: string): string {
+  const action = normalizeActionName(actionName);
+  switch (action) {
+    case 'record_audio':
+      return 'record_voice';
+    case 'upload_audio':
+      return 'upload_voice';
+    case 'record_video':
+      return 'record_video';
+    case 'upload_video':
+      return 'upload_video';
+    case 'upload_photo':
+      return 'upload_photo';
+    case 'upload_document':
+      return 'upload_document';
+    case 'choose_sticker':
+      return 'choose_sticker';
+    case 'find_location':
+      return 'find_location';
+    case 'record_video_note':
+      return 'record_video_note';
+    case 'upload_video_note':
+      return 'upload_video_note';
+    case 'cancel':
+      return 'typing';
+    case 'typing':
+    default:
+      return 'typing';
+  }
+}
+
