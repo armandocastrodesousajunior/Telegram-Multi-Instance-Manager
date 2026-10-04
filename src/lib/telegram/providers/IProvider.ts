@@ -53,7 +53,12 @@ export interface ITelegramProvider {
   simulateFileAction(chatId: string | number, action: 'document' | 'photo' | 'video' | 'audio', durationMs?: number): Promise<SimulationResult>;
 
   /**
-   * Envia uma ação de chat ao Telegram (digitando, gravando áudio, enviando foto, etc.)
+   * Envia uma ação de chat ao Telegram uma única vez (padrão Telegram ~5s, sem loop)
    */
-  sendChatAction(chatId: string | number, action: string, durationSeconds?: number, wait?: boolean): Promise<{ success: boolean; action: string; durationMs: number; peerResolution?: any }>;
+  sendChatAction(chatId: string | number, action: string): Promise<{ success: boolean; action: string; durationMs: number; peerResolution?: any }>;
+
+  /**
+   * Mantém uma ação de chat ativa em loop contínuo durante determinado tempo
+   */
+  sendChatActionLoop(chatId: string | number, action: string, durationSeconds: number, wait?: boolean): Promise<{ success: boolean; action: string; durationMs: number; peerResolution?: any }>;
 }

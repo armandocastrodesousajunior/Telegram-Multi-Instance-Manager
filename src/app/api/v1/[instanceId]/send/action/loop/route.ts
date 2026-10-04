@@ -4,10 +4,7 @@ import { ProviderFactory } from '@/lib/telegram/providers/ProviderFactory';
 import { logApiRequest } from '@/lib/logger';
 import { getCachedInstance } from '@/lib/telegram/utils';
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: Promise<{ instanceId: string; actionType: string }> }
-) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ instanceId: string }> }) {
   let authInstanceId = undefined;
   try {
     if (typeof params !== 'undefined') {
@@ -19,15 +16,15 @@ export async function POST(
 
   try {
     const requestStartTime = Date.now();
-    const { instanceId, actionType } = await params;
+    const { instanceId } = await params;
     const body = await req.json();
-    const { chatId, action, durationSeconds, duration, wait = false } = body;
+    const { chatId, action = 'typing', durationSeconds = 10, duration, wait = false } = body;
 
     if (!chatId) {
       const err = { error: 'chatId is required' };
       await logApiRequest({
         instanceId,
-        endpoint: `/send/action/${actionType}`,
+        endpoint: '/send/action/loop',
         method: 'POST',
         requestBody: body,
         responseStatus: 400,
@@ -42,15 +39,8 @@ export async function POST(
 
     const provider = await ProviderFactory.getProvider(instance);
 
-    let actionResult: any;
-    if (actionType === 'loop') {
-      const chosenAction = action || 'typing';
-      const dur = durationSeconds !== undefined ? durationSeconds : duration;
-      actionResult = await provider.sendChatActionLoop(chatId, chosenAction, dur || 10, wait);
-    } else {
-      const chosenAction = action || actionType;
-      actionResult = await provider.sendChatAction(chatId, chosenAction);
-    }
+    const dur = durationSeconds !== undefined ? durationSeconds : (duration || 10);
+    const actionResult = await provider.sendChatActionLoop(chatId, action, dur, wait);
 
     const totalRequestMs = Date.now() - requestStartTime;
     const resData = {
@@ -59,6 +49,7 @@ export async function POST(
       action: actionResult.action,
       durationMs: actionResult.durationMs,
       totalTimingMs: totalRequestMs,
+      loop: true,
       timing: {
         actionMs: actionResult.durationMs,
         peerResolution: actionResult.peerResolution
@@ -67,7 +58,7 @@ export async function POST(
 
     await logApiRequest({
       instanceId,
-      endpoint: `/send/action/${actionType}`,
+      endpoint: '/send/action/loop',
       method: 'POST',
       requestBody: body,
       responseStatus: 200,
@@ -76,11 +67,10 @@ export async function POST(
     });
     return NextResponse.json(resData);
   } catch (err: any) {
-    const p = await params;
     const errBody = { error: err.message };
     await logApiRequest({
-      instanceId: p.instanceId,
-      endpoint: `/send/action/${p.actionType}`,
+      instanceId: (await params).instanceId,
+      endpoint: '/send/action/loop',
       method: 'POST',
       requestBody: null,
       responseStatus: 500,

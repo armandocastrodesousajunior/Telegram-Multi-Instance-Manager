@@ -291,41 +291,48 @@ export class BotApiProvider implements ITelegramProvider {
     return { peerResolution: botPeerResolution, simulationMs: Date.now() - tSim };
   }
 
-  async sendChatAction(chatId: string | number, action: string, durationSeconds?: number, wait?: boolean) {
+  async sendChatAction(chatId: string | number, action: string) {
     const normalized = normalizeActionName(action);
     const botAction = getBotApiAction(normalized);
 
     const botPeerResolution = { layerHit: -1 as any, layerName: 'Bot HTTP API' as any, resolveMs: 0 };
     const tStart = Date.now();
 
-    const isCancel = normalized === 'cancel';
-    const duration = (!isCancel && durationSeconds !== undefined && durationSeconds > 0)
-      ? Math.min(durationSeconds * 1000, 60000)
-      : 0;
+    if (normalized !== 'cancel') {
+      await this.callApi('sendChatAction', { chat_id: chatId, action: botAction });
+    }
+    return { success: true, action: normalized, durationMs: Date.now() - tStart, peerResolution: botPeerResolution };
+  }
 
-    if (duration > 0) {
-      const runLoop = async () => {
-        const targetEndTime = Date.now() + duration;
-        while (Date.now() < targetEndTime) {
-          this.callApi('sendChatAction', { chat_id: chatId, action: botAction }).catch(() => {});
-          const remaining = targetEndTime - Date.now();
-          if (remaining <= 0) break;
-          await new Promise(r => setTimeout(r, Math.min(4000, remaining)));
-        }
-      };
+  async sendChatActionLoop(chatId: string | number, action: string, durationSeconds: number = 10, wait: boolean = false) {
+    const normalized = normalizeActionName(action);
+    const botAction = getBotApiAction(normalized);
 
-      if (wait) {
-        await runLoop();
-        return { success: true, action: normalized, durationMs: Date.now() - tStart, peerResolution: botPeerResolution };
-      } else {
-        runLoop().catch(() => {});
-        return { success: true, action: normalized, durationMs: duration, peerResolution: botPeerResolution };
-      }
-    } else {
-      if (!isCancel) {
-        await this.callApi('sendChatAction', { chat_id: chatId, action: botAction });
-      }
+    const botPeerResolution = { layerHit: -1 as any, layerName: 'Bot HTTP API' as any, resolveMs: 0 };
+    const tStart = Date.now();
+
+    if (normalized === 'cancel') {
       return { success: true, action: normalized, durationMs: Date.now() - tStart, peerResolution: botPeerResolution };
+    }
+
+    const duration = Math.min(Math.max(durationSeconds || 1, 1) * 1000, 60000);
+
+    const runLoop = async () => {
+      const targetEndTime = Date.now() + duration;
+      while (Date.now() < targetEndTime) {
+        this.callApi('sendChatAction', { chat_id: chatId, action: botAction }).catch(() => {});
+        const remaining = targetEndTime - Date.now();
+        if (remaining <= 0) break;
+        await new Promise(r => setTimeout(r, Math.min(4000, remaining)));
+      }
+    };
+
+    if (wait) {
+      await runLoop();
+      return { success: true, action: normalized, durationMs: Date.now() - tStart, peerResolution: botPeerResolution };
+    } else {
+      runLoop().catch(() => {});
+      return { success: true, action: normalized, durationMs: duration, peerResolution: botPeerResolution };
     }
   }
 }

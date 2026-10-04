@@ -18,7 +18,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     const requestStartTime = Date.now();
     const { instanceId } = await params;
     const body = await req.json();
-    const { chatId, action = 'typing', durationSeconds, duration, wait = false } = body;
+    const { chatId, action = 'typing' } = body;
 
     if (!chatId) {
       const err = { error: 'chatId is required' };
@@ -31,8 +31,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
 
     const provider = await ProviderFactory.getProvider(instance);
 
-    const dur = durationSeconds !== undefined ? durationSeconds : duration;
-    const actionResult = await provider.sendChatAction(chatId, action, dur, wait);
+    const actionResult = await provider.sendChatAction(chatId, action);
 
     const totalRequestMs = Date.now() - requestStartTime;
     const resData = {

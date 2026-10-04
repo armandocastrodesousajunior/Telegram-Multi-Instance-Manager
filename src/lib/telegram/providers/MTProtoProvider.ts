@@ -68,40 +68,48 @@ export class MTProtoProvider implements ITelegramProvider {
     return simulateFileAction(client, this.instance.id, chatId.toString(), action, durationMs);
   }
 
-  async sendChatAction(chatId: string | number, action: string, durationSeconds?: number, wait?: boolean) {
+  async sendChatAction(chatId: string | number, action: string) {
+    const client = await telegramManager.getClient(this.instance.id);
+    const { entity: peer, resolution: peerResolution } = await getOrFetchEntity(client, chatId);
+    const normalized = normalizeActionName(action);
+    const telegramAction = getTelegramActionClass(normalized);
+
+    const tStart = Date.now();
+    await client.invoke(new Api.messages.SetTyping({ peer, action: telegramAction }));
+    return { success: true, action: normalized, durationMs: Date.now() - tStart, peerResolution };
+  }
+
+  async sendChatActionLoop(chatId: string | number, action: string, durationSeconds: number = 10, wait: boolean = false) {
     const client = await telegramManager.getClient(this.instance.id);
     const { entity: peer, resolution: peerResolution } = await getOrFetchEntity(client, chatId);
     const normalized = normalizeActionName(action);
     const telegramAction = getTelegramActionClass(normalized);
 
     const isCancel = normalized === 'cancel';
-    const duration = (!isCancel && durationSeconds !== undefined && durationSeconds > 0)
-      ? Math.min(durationSeconds * 1000, 60000)
-      : 0;
-
-    const tStart = Date.now();
-
-    if (duration > 0) {
-      if (wait) {
-        const { simulationMs } = await getWorkerPool().runSimulation(
-          duration,
-          () => {
-            client.invoke(new Api.messages.SetTyping({ peer, action: telegramAction })).catch(() => {});
-          }
-        );
-        return { success: true, action: normalized, durationMs: simulationMs, peerResolution };
-      } else {
-        getWorkerPool().runSimulation(
-          duration,
-          () => {
-            client.invoke(new Api.messages.SetTyping({ peer, action: telegramAction })).catch(() => {});
-          }
-        ).catch(() => {});
-        return { success: true, action: normalized, durationMs: duration, peerResolution };
-      }
-    } else {
+    if (isCancel) {
+      const tStart = Date.now();
       await client.invoke(new Api.messages.SetTyping({ peer, action: telegramAction }));
       return { success: true, action: normalized, durationMs: Date.now() - tStart, peerResolution };
+    }
+
+    const duration = Math.min(Math.max(durationSeconds || 1, 1) * 1000, 60000);
+
+    if (wait) {
+      const { simulationMs } = await getWorkerPool().runSimulation(
+        duration,
+        () => {
+          client.invoke(new Api.messages.SetTyping({ peer, action: telegramAction })).catch(() => {});
+        }
+      );
+      return { success: true, action: normalized, durationMs: simulationMs, peerResolution };
+    } else {
+      getWorkerPool().runSimulation(
+        duration,
+        () => {
+          client.invoke(new Api.messages.SetTyping({ peer, action: telegramAction })).catch(() => {});
+        }
+      ).catch(() => {});
+      return { success: true, action: normalized, durationMs: duration, peerResolution };
     }
   }
 }
