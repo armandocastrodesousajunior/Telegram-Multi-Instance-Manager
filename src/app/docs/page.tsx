@@ -30,12 +30,17 @@ import {
   ExternalLink,
   Copy,
   Check,
-  Share2
+  Share2,
+  List,
+  Server,
+  PlusCircle,
+  ShieldCheck,
+  Key
 } from "lucide-react";
 
 export default function DocsPage() {
   const [docSection, setDocSection] = useState<"endpoints" | "webhooks">("endpoints");
-  const [activeTab, setActiveTab] = useState("text");
+  const [activeTab, setActiveTab] = useState("instances-list");
   const [activeWebhook, setActiveWebhook] = useState("overview");
   const [origin, setOrigin] = useState("https://your-domain.com");
 
@@ -45,6 +50,7 @@ export default function DocsPage() {
 
   // Test Runner States (para API REST)
   const [testInstanceId, setTestInstanceId] = useState("");
+  const [testWebhookId, setTestWebhookId] = useState("");
   const [testApiToken, setTestApiToken] = useState("");
   const [testPayload, setTestPayload] = useState("");
   const [testLoading, setTestLoading] = useState(false);
@@ -89,78 +95,303 @@ export default function DocsPage() {
         setDocSection("endpoints");
         if (ep) setActiveTab(ep);
       }
+
+      // Preenche token de teste se houver login salvo
+      const savedToken = localStorage.getItem("token");
+      if (savedToken) setTestApiToken(savedToken);
     }
   }, []);
 
-  // ── Endpoints REST ──────────────────────────────────────────────────────────
-  const endpoints = [
-    { id: "text", label: "Send Text", icon: MessageSquare },
-    { id: "image", label: "Send Image", icon: ImageIcon },
-    { id: "video", label: "Send Video", icon: Video },
-    { id: "audio", label: "Send Audio", icon: Music },
-    { id: "voice", label: "Send Voice Note", icon: Mic },
-    { id: "document", label: "Send Document", icon: FileText },
-    { id: "smart", label: "Smart Flow", icon: Play },
-    { id: "call", label: "Phone Call", icon: PhoneCall },
+  // ── Endpoints REST Categorizados ───────────────────────────────────────────
+  const endpointCategories = [
+    {
+      name: "Gerenciamento & Instâncias (Admin)",
+      items: [
+        { id: "instances-list", label: "Listar Instâncias", method: "GET", icon: List },
+        { id: "instances-get", label: "Consultar Instância", method: "GET", icon: Server },
+        { id: "instances-update", label: "Atualizar Instância", method: "PATCH", icon: Edit3 },
+        { id: "instances-delete", label: "Deletar Instância", method: "DELETE", icon: Trash2 },
+        { id: "webhook-create", label: "Criar Webhook", method: "POST", icon: PlusCircle },
+        { id: "webhooks-list", label: "Listar Webhooks", method: "GET", icon: Webhook },
+        { id: "webhook-delete", label: "Deletar Webhook", method: "DELETE", icon: Trash2 },
+      ]
+    },
+    {
+      name: "Envio de Mensagens & Ações",
+      items: [
+        { id: "text", label: "Send Text", method: "POST", icon: MessageSquare },
+        { id: "image", label: "Send Image", method: "POST", icon: ImageIcon },
+        { id: "video", label: "Send Video", method: "POST", icon: Video },
+        { id: "audio", label: "Send Audio", method: "POST", icon: Music },
+        { id: "voice", label: "Send Voice Note", method: "POST", icon: Mic },
+        { id: "document", label: "Send Document", method: "POST", icon: FileText },
+        { id: "smart", label: "Smart Flow", method: "POST", icon: Play },
+        { id: "call", label: "Phone Call", method: "POST", icon: PhoneCall },
+      ]
+    }
   ];
 
+  const allEndpoints = endpointCategories.flatMap(c => c.items);
+
   const getEndpointData = (id: string) => {
-    if (id === "call") {
-      const baseUrl = `${origin}/api/v1/[instanceId]/call`;
-      const payloadFields = [
-        { name: "chatId", type: "string | number", description: "O telefone (ex: 5511999999999), @username ou ID numérico do destinatário.", required: true },
-        { name: "timeoutSeconds", type: "number", description: "Tempo máximo em segundos tocando até considerar não atendida (padrão: 30).", required: false },
-        { name: "durationSeconds", type: "number", description: "Tempo em segundos conectado após o lead atender antes de desligar automaticamente (padrão: 5).", required: false },
-        { name: "video", type: "boolean", description: "Se true, a chamada toca com indicação de chamada de vídeo na tela do lead (padrão: false).", required: false },
-      ];
-      const exampleJson = {
-        chatId: "5511999999999",
-        durationSeconds: 5,
-        timeoutSeconds: 30,
-        video: false
-      };
-      return { baseUrl, payloadFields, exampleJson };
-    }
+    switch (id) {
+      case "instances-list":
+        return {
+          title: "Listar Instâncias (List Instances)",
+          method: "GET",
+          category: "admin",
+          badgeColor: "#3b82f6",
+          baseUrl: `${origin}/api/v1/instances`,
+          altUrl: `${origin}/api/instances`,
+          description: "Retorna a lista de todas as instâncias cadastradas no sistema com dados essenciais (id, nome, token da instância, status, idioma, telefone, tipo). A string de sessão MTProto é mantida sigilosa e omitida.",
+          authType: "Master ACCESS_TOKEN (.env)",
+          authDescription: "Requer o token mestre ACCESS_TOKEN definido no .env do servidor.",
+          payloadFields: [],
+          exampleJson: null,
+          responseExample: [
+            {
+              id: "3a7f9dbb-6952-4663-974a-8230028d070c",
+              name: "Comercial 01",
+              language: "pt-BR",
+              type: "USER",
+              botType: null,
+              botToken: null,
+              phone: "+5511999999999",
+              status: "connected",
+              token: "e7b0a829-4fc1-4d39-953b-e015acb98192",
+              createdAt: "2026-10-04T12:00:00.000Z"
+            }
+          ]
+        };
 
-    const baseUrl = `${origin}/api/v1/[instanceId]/send/${id}`;
-    const payloadFields: any[] = [
-      { name: "chatId", type: "string | number", description: "O número de telefone, username (@) ou chat ID de destino.", required: true },
-    ];
-    
-    if (id === "text") {
-      payloadFields.push({ name: "text", type: "string", description: "Texto da mensagem a ser enviada.", required: true });
-    } else if (id === "smart") {
-      payloadFields.push({ name: "content", type: "string", description: "Texto dinâmico interpolado com tags de mídia (ex: <voice url='...'></voice> ou <image url='...'></image>).", required: true });
-    } else {
-      payloadFields.push({ name: "url", type: "string", description: `URL pública e acessível do arquivo de ${id}.`, required: true });
-      if (id !== "voice") {
-        payloadFields.push({ name: "caption", type: "string", description: "Legenda opcional anexada à mídia.", required: false });
+      case "instances-get":
+        return {
+          title: "Consultar Detalhes da Instância",
+          method: "GET",
+          category: "admin",
+          badgeColor: "#3b82f6",
+          baseUrl: `${origin}/api/v1/instances/[instanceId]`,
+          altUrl: `${origin}/api/instances/[instanceId]`,
+          description: "Retorna os detalhes completos de uma instância, incluindo suas configurações ativas e lista de webhooks cadastrados.",
+          authType: "Master ACCESS_TOKEN (.env)",
+          authDescription: "Requer o token mestre ACCESS_TOKEN via header Authorization: Bearer <ACCESS_TOKEN> ou x-access-token.",
+          payloadFields: [],
+          exampleJson: null,
+          responseExample: {
+            id: "3a7f9dbb-6952-4663-974a-8230028d070c",
+            name: "Comercial 01",
+            language: "pt-BR",
+            type: "USER",
+            status: "connected",
+            token: "e7b0a829-4fc1-4d39-953b-e015acb98192",
+            settings: {
+              typingEnabled: true,
+              audioActionEnabled: true
+            },
+            webhooks: []
+          }
+        };
+
+      case "instances-update":
+        return {
+          title: "Atualizar Instância",
+          method: "PATCH",
+          category: "admin",
+          badgeColor: "#f59e0b",
+          baseUrl: `${origin}/api/v1/instances/[instanceId]`,
+          altUrl: `${origin}/api/instances/[instanceId]`,
+          description: "Atualiza os dados cadastrais da instância (nome ou idioma). Também suporta requisições via método PUT.",
+          authType: "Master ACCESS_TOKEN (.env)",
+          authDescription: "Requer o token mestre ACCESS_TOKEN via header Authorization: Bearer <ACCESS_TOKEN>.",
+          payloadFields: [
+            { name: "name", type: "string", description: "Novo nome da instância.", required: false },
+            { name: "language", type: "string", description: "Código do idioma padrão da instância (ex: 'pt-BR', 'en-US', 'es-ES').", required: false }
+          ],
+          exampleJson: {
+            name: "Novo Nome da Instância",
+            language: "pt-BR"
+          },
+          responseExample: {
+            id: "3a7f9dbb-6952-4663-974a-8230028d070c",
+            name: "Novo Nome da Instância",
+            language: "pt-BR",
+            status: "connected"
+          }
+        };
+
+      case "instances-delete":
+        return {
+          title: "Deletar Instância",
+          method: "DELETE",
+          category: "admin",
+          badgeColor: "#ef4444",
+          baseUrl: `${origin}/api/v1/instances/[instanceId]`,
+          altUrl: `${origin}/api/instances/[instanceId]`,
+          description: "Desconecta e apaga a instância permanentemente junto com todas as suas configurações, caches e webhooks vinculados.",
+          authType: "Master ACCESS_TOKEN (.env)",
+          authDescription: "Requer o token mestre ACCESS_TOKEN via header Authorization: Bearer <ACCESS_TOKEN>.",
+          payloadFields: [],
+          exampleJson: null,
+          responseExample: { success: true }
+        };
+
+      case "webhook-create":
+        return {
+          title: "Criar Webhook (Create Webhook)",
+          method: "POST",
+          category: "admin",
+          badgeColor: "#10b981",
+          baseUrl: `${origin}/api/v1/instances/[instanceId]/webhooks`,
+          altUrl: `${origin}/api/instances/[instanceId]/webhooks`,
+          description: "Cria e vincula um webhook a uma instância para receber eventos em tempo real via HTTP POST.",
+          authType: "Master ACCESS_TOKEN (.env)",
+          authDescription: "Requer o token mestre ACCESS_TOKEN via header Authorization: Bearer <ACCESS_TOKEN> ou x-access-token.",
+          payloadFields: [
+            { name: "url", type: "string", description: "URL HTTPS pública de destino que receberá os POSTs de eventos.", required: true },
+            { name: "name", type: "string", description: "Nome identificador do webhook (ex: 'N8N Automação').", required: false },
+            { name: "events", type: "string[]", description: "Array com nomes dos eventos desejados (ex: ['message', 'chat.typing', 'call.ended']). Padrão: ['message'].", required: false },
+            { name: "includeOutgoing", type: "boolean", description: "Se true, despacha também mensagens enviadas pela própria instância. Padrão: true.", required: false }
+          ],
+          exampleJson: {
+            name: "N8N Automação",
+            url: "https://meu-n8n.com/webhook/telegram",
+            events: ["message", "chat.typing", "call.ended"],
+            includeOutgoing: true
+          },
+          responseExample: {
+            id: "wh-9912",
+            instanceId: "3a7f9dbb-6952-4663-974a-8230028d070c",
+            name: "N8N Automação",
+            url: "https://meu-n8n.com/webhook/telegram",
+            events: ["message", "chat.typing", "call.ended"],
+            active: true,
+            includeOutgoing: true,
+            createdAt: "2026-10-04T12:00:00.000Z"
+          }
+        };
+
+      case "webhooks-list":
+        return {
+          title: "Listar Webhooks da Instância",
+          method: "GET",
+          category: "admin",
+          badgeColor: "#3b82f6",
+          baseUrl: `${origin}/api/v1/instances/[instanceId]/webhooks`,
+          altUrl: `${origin}/api/instances/[instanceId]/webhooks`,
+          description: "Lista todos os webhooks vinculados a uma determinada instância.",
+          authType: "Master ACCESS_TOKEN (.env)",
+          authDescription: "Requer o token mestre ACCESS_TOKEN via header Authorization: Bearer <ACCESS_TOKEN>.",
+          payloadFields: [],
+          exampleJson: null,
+          responseExample: [
+            {
+              id: "wh-9912",
+              instanceId: "3a7f9dbb-6952-4663-974a-8230028d070c",
+              name: "N8N Automação",
+              url: "https://meu-n8n.com/webhook/telegram",
+              events: ["message", "call.ended"],
+              active: true,
+              includeOutgoing: true,
+              createdAt: "2026-10-04T12:00:00.000Z"
+            }
+          ]
+        };
+
+      case "webhook-delete":
+        return {
+          title: "Deletar Webhook",
+          method: "DELETE",
+          category: "admin",
+          badgeColor: "#ef4444",
+          baseUrl: `${origin}/api/v1/instances/[instanceId]/webhooks/[webhookId]`,
+          altUrl: `${origin}/api/instances/[instanceId]/webhooks/[webhookId]`,
+          description: "Remove um webhook cadastrado de uma instância.",
+          authType: "Master ACCESS_TOKEN (.env)",
+          authDescription: "Requer o token mestre ACCESS_TOKEN via header Authorization: Bearer <ACCESS_TOKEN>.",
+          payloadFields: [],
+          exampleJson: null,
+          responseExample: { success: true }
+        };
+
+      case "call":
+        return {
+          title: "Phone Call (Ligação MTProto)",
+          method: "POST",
+          category: "messages",
+          badgeColor: "#10b981",
+          baseUrl: `${origin}/api/v1/[instanceId]/call`,
+          description: "Inicia uma ligação telefônica via conta pessoal da instância. Toca no aparelho do lead, conecta, aguarda 5 segundos (ou durationSeconds) e desliga automaticamente com telemetria completa.",
+          authType: "API Token da Instância",
+          authDescription: "Requer o token da instância retornado na listagem de instâncias (ou ACCESS_TOKEN).",
+          payloadFields: [
+            { name: "chatId", type: "string | number", description: "O telefone (ex: 5511999999999), @username ou ID numérico do destinatário.", required: true },
+            { name: "timeoutSeconds", type: "number", description: "Tempo máximo em segundos tocando até considerar não atendida (padrão: 30).", required: false },
+            { name: "durationSeconds", type: "number", description: "Tempo em segundos conectado após o lead atender antes de desligar automaticamente (padrão: 5).", required: false },
+            { name: "video", type: "boolean", description: "Se true, a chamada toca com indicação de chamada de vídeo na tela do lead (padrão: false).", required: false },
+          ],
+          exampleJson: {
+            chatId: "5511999999999",
+            durationSeconds: 5,
+            timeoutSeconds: 30,
+            video: false
+          },
+          responseExample: { success: true, callId: "c_998124", status: "ringing" }
+        };
+
+      default: {
+        const baseUrl = `${origin}/api/v1/[instanceId]/send/${id}`;
+        const payloadFields: any[] = [
+          { name: "chatId", type: "string | number", description: "O número de telefone, username (@) ou chat ID de destino.", required: true },
+        ];
+        
+        if (id === "text") {
+          payloadFields.push({ name: "text", type: "string", description: "Texto da mensagem a ser enviada.", required: true });
+        } else if (id === "smart") {
+          payloadFields.push({ name: "content", type: "string", description: "Texto dinâmico interpolado com tags de mídia (ex: <voice url='...'></voice> ou <image url='...'></image>).", required: true });
+        } else {
+          payloadFields.push({ name: "url", type: "string", description: `URL pública e acessível do arquivo de ${id}.`, required: true });
+          if (id !== "voice") {
+            payloadFields.push({ name: "caption", type: "string", description: "Legenda opcional anexada à mídia.", required: false });
+          }
+          if (id === "image" || id === "video") {
+            payloadFields.push({ name: "viewOnce", type: "boolean", description: "Se true, envia como mídia de visualização única (autodestrói após visualizada).", required: false });
+          }
+        }
+        
+        if (id === "text" || id === "image" || id === "video" || id === "document" || id === "smart") {
+          payloadFields.push({ name: "parseMode", type: "string", description: 'Modo de formatação do texto/legenda. Use "html" ou "md" (Markdown).', required: false });
+        }
+        
+        payloadFields.push({ name: "replyToMsgId", type: "number", description: "ID de uma mensagem anterior para responder diretamente (Reply).", required: false });
+
+        const exampleJson: any = { chatId: "5511999999999" };
+        if (id === "text") {
+          exampleJson.text = "Olá! Tudo bem? Segue sua mensagem.";
+          exampleJson.parseMode = "html";
+        } else if (id === "smart") {
+          exampleJson.content = "Oi amor! Olha isso aqui:\n\n<voice url=\"https://example.com/audio.mp3\"></voice>\n\nVocê gostou?";
+          exampleJson.parseMode = "html";
+        } else {
+          exampleJson.url = `https://example.com/arquivo.${id === "image" ? "jpg" : id === "video" ? "mp4" : "mp3"}`;
+          if (id !== "voice") exampleJson.caption = "Confira este arquivo!";
+          if (id === "image" || id === "video") exampleJson.viewOnce = true;
+        }
+
+        return {
+          title: `Send ${id.charAt(0).toUpperCase() + id.slice(1)}`,
+          method: "POST",
+          category: "messages",
+          badgeColor: "#6366f1",
+          baseUrl,
+          description: `Envia ${id === "text" ? "mensagem de texto" : id} com simulação de ação do usuário e retorno de confirmação de envio.`,
+          authType: "API Token da Instância",
+          authDescription: "Requer o token da instância retornado na listagem de instâncias (ou ACCESS_TOKEN).",
+          payloadFields,
+          exampleJson,
+          responseExample: { success: true, messageId: 98124, sentAt: new Date().toISOString() }
+        };
       }
-      if (id === "image" || id === "video") {
-        payloadFields.push({ name: "viewOnce", type: "boolean", description: "Se true, envia como mídia de visualização única (autodestrói após visualizada).", required: false });
-      }
     }
-    
-    if (id === "text" || id === "image" || id === "video" || id === "document" || id === "smart") {
-      payloadFields.push({ name: "parseMode", type: "string", description: 'Modo de formatação do texto/legenda. Use "html" ou "md" (Markdown).', required: false });
-    }
-    
-    payloadFields.push({ name: "replyToMsgId", type: "number", description: "ID de uma mensagem anterior para responder diretamente (Reply).", required: false });
-
-    const exampleJson: any = { chatId: "5511999999999" };
-    if (id === "text") {
-      exampleJson.text = "Olá! Tudo bem? Segue sua mensagem.";
-      exampleJson.parseMode = "html";
-    } else if (id === "smart") {
-      exampleJson.content = "Oi amor! Olha isso aqui:\n\n<voice url=\"https://example.com/audio.mp3\"></voice>\n\nVocê gostou?";
-      exampleJson.parseMode = "html";
-    } else {
-      exampleJson.url = `https://example.com/arquivo.${id === "image" ? "jpg" : id === "video" ? "mp4" : "mp3"}`;
-      if (id !== "voice") exampleJson.caption = "Confira este arquivo!";
-      if (id === "image" || id === "video") exampleJson.viewOnce = true;
-    }
-
-    return { baseUrl, payloadFields, exampleJson };
   };
 
   const currentEndpointData = getEndpointData(activeTab);
@@ -590,32 +821,52 @@ export default function DocsPage() {
   }, [activeTab, origin, docSection]);
 
   const handleTestRequest = async () => {
-    if (!testInstanceId || !testApiToken) {
-      alert("Instance ID e API Token são obrigatórios para testar.");
+    const epData = getEndpointData(activeTab);
+    const method = epData.method || "POST";
+    const needsInstanceId = epData.baseUrl.includes("[instanceId]");
+    const needsWebhookId = epData.baseUrl.includes("[webhookId]");
+
+    if (needsInstanceId && !testInstanceId.trim()) {
+      alert("Instance ID é obrigatório para testar este endpoint.");
+      return;
+    }
+    if (needsWebhookId && !testWebhookId.trim()) {
+      alert("Webhook ID é obrigatório para testar este endpoint.");
+      return;
+    }
+    if (!testApiToken.trim()) {
+      alert(epData.category === "admin" 
+        ? "O Master ACCESS_TOKEN (.env) é obrigatório para endpoints administrativos." 
+        : "O Bearer Token é obrigatório para testar.");
       return;
     }
     
-    let parsedPayload;
-    try {
-      parsedPayload = JSON.parse(testPayload);
-    } catch (e) {
-      alert("JSON inválido no corpo da requisição.");
-      return;
+    let parsedPayload = undefined;
+    if (method !== "GET" && method !== "DELETE" && epData.payloadFields.length > 0) {
+      try {
+        parsedPayload = JSON.parse(testPayload);
+      } catch (e) {
+        alert("JSON inválido no corpo da requisição.");
+        return;
+      }
     }
 
     setTestLoading(true);
     setTestResponse(null);
     try {
-      const targetUrl = currentEndpointData.baseUrl.replace("[instanceId]", testInstanceId);
+      let targetUrl = epData.baseUrl;
+      if (needsInstanceId) targetUrl = targetUrl.replace("[instanceId]", testInstanceId.trim());
+      if (needsWebhookId) targetUrl = targetUrl.replace("[webhookId]", testWebhookId.trim());
+
       const res = await fetch(targetUrl, {
-        method: "POST",
+        method,
         headers: {
-          "Authorization": `Bearer ${testApiToken}`,
+          "Authorization": `Bearer ${testApiToken.trim()}`,
           "Content-Type": "application/json"
         },
-        body: JSON.stringify(parsedPayload)
+        body: parsedPayload ? JSON.stringify(parsedPayload) : undefined
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({ statusText: res.statusText }));
       setTestResponse({ status: res.status, ok: res.ok, data });
     } catch (err: any) {
       setTestResponse({ status: "Error", ok: false, error: err.message });
@@ -744,36 +995,47 @@ export default function DocsPage() {
         <div style={{ overflowY: "auto", flex: 1, paddingRight: "4px" }}>
           {docSection === "endpoints" ? (
             <div>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "var(--text-secondary)", marginBottom: "12px", fontSize: "11px", fontWeight: 700, letterSpacing: "1px", textTransform: "uppercase" }}>
-                <Book size={13} /> Endpoints de Envio
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                {endpoints.map((ep) => {
-                  const Icon = ep.icon;
-                  const isActive = activeTab === ep.id;
-                  return (
-                    <button
-                      key={ep.id}
-                      onClick={() => {
-                        setActiveTab(ep.id);
-                        updateUrl("endpoints", ep.id);
-                      }}
-                      style={{
-                        display: "flex", alignItems: "center", gap: "10px", padding: "10px 12px",
-                        borderRadius: "8px", border: "none", 
-                        background: isActive ? "rgba(99, 102, 241, 0.15)" : "transparent",
-                        borderLeft: isActive ? "3px solid #6366f1" : "3px solid transparent",
-                        color: isActive ? "#ffffff" : "var(--text-secondary)",
-                        cursor: "pointer", fontWeight: isActive ? 600 : 400, textAlign: "left", transition: "all 0.2s ease"
-                      }}
-                      className="sidebar-btn"
-                    >
-                      <Icon size={16} style={{ color: isActive ? "#818cf8" : "inherit" }} />
-                      {ep.label}
-                    </button>
-                  );
-                })}
-              </div>
+              {endpointCategories.map((cat, idx) => (
+                <div key={idx} style={{ marginBottom: "18px" }}>
+                  <div style={{ color: "var(--text-secondary)", marginBottom: "8px", fontSize: "11px", fontWeight: 700, letterSpacing: "0.8px", textTransform: "uppercase" }}>
+                    {cat.name}
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+                    {cat.items.map((ep) => {
+                      const Icon = ep.icon;
+                      const isActive = activeTab === ep.id;
+                      const methodColor = ep.method === "GET" ? "#3b82f6" : ep.method === "POST" ? "#10b981" : ep.method === "PATCH" ? "#f59e0b" : "#ef4444";
+                      return (
+                        <button
+                          key={ep.id}
+                          onClick={() => {
+                            setActiveTab(ep.id);
+                            updateUrl("endpoints", ep.id);
+                          }}
+                          style={{
+                            display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 12px",
+                            borderRadius: "8px", border: "none", 
+                            background: isActive ? "rgba(99, 102, 241, 0.15)" : "transparent",
+                            borderLeft: isActive ? "3px solid #6366f1" : "3px solid transparent",
+                            color: isActive ? "#ffffff" : "var(--text-secondary)",
+                            cursor: "pointer", fontWeight: isActive ? 600 : 400, textAlign: "left", transition: "all 0.2s ease",
+                            fontSize: "13px"
+                          }}
+                          className="sidebar-btn"
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                            <Icon size={15} style={{ color: isActive ? "#818cf8" : "inherit" }} />
+                            <span>{ep.label}</span>
+                          </div>
+                          <span style={{ fontSize: "10px", fontWeight: "bold", padding: "1px 5px", borderRadius: "4px", background: `${methodColor}22`, color: methodColor, border: `1px solid ${methodColor}44` }}>
+                            {ep.method}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           ) : (
             <div>
@@ -836,20 +1098,24 @@ export default function DocsPage() {
             <span 
               className="badge" 
               style={{ 
-                backgroundColor: docSection === "endpoints" ? "rgba(16, 185, 129, 0.1)" : "rgba(139, 92, 246, 0.15)", 
-                color: docSection === "endpoints" ? "var(--success-color)" : (currentWebhookData.badgeColor || "var(--accent-color)"), 
+                backgroundColor: docSection === "endpoints" 
+                  ? (currentEndpointData.category === "admin" ? "rgba(59, 130, 246, 0.15)" : "rgba(16, 185, 129, 0.1)") 
+                  : "rgba(139, 92, 246, 0.15)", 
+                color: docSection === "endpoints" 
+                  ? (currentEndpointData.category === "admin" ? "#60a5fa" : "var(--success-color)") 
+                  : (currentWebhookData.badgeColor || "var(--accent-color)"), 
                 fontSize: "13px", 
                 padding: "6px 14px", 
                 borderRadius: "99px", 
                 fontWeight: "bold",
-                border: `1px solid ${docSection === "endpoints" ? "rgba(16, 185, 129, 0.2)" : (currentWebhookData.badgeColor + "33")}`
+                border: `1px solid ${docSection === "endpoints" ? (currentEndpointData.category === "admin" ? "rgba(59, 130, 246, 0.3)" : "rgba(16, 185, 129, 0.2)") : (currentWebhookData.badgeColor + "33")}`
               }}
             >
-              {docSection === "endpoints" ? "POST ENDPOINT" : "WEBHOOK EVENT"}
+              {docSection === "endpoints" ? `${currentEndpointData.method} ${currentEndpointData.category === "admin" ? "ADMIN" : "ENDPOINT"}` : "WEBHOOK EVENT"}
             </span>
             <h1 className="page-title" style={{ margin: 0, fontSize: "26px" }}>
               {docSection === "endpoints" 
-                ? endpoints.find(e => e.id === activeTab)?.label 
+                ? (allEndpoints.find(e => e.id === activeTab)?.label || currentEndpointData.title)
                 : currentWebhookData.title}
             </h1>
           </div>
@@ -948,19 +1214,55 @@ export default function DocsPage() {
         {docSection === "endpoints" ? (
           /* ── VIEW: ENDPOINTS REST ─────────────────────────────────────────── */
           <div className="animate-fade-in">
-            <div style={{ fontFamily: "monospace", fontSize: "15px", color: "var(--text-secondary)", marginBottom: "40px", padding: "12px 16px", background: "rgba(0,0,0,0.3)", borderRadius: "8px", border: "1px solid var(--glass-border)" }}>
-              {currentEndpointData.baseUrl}
+            {/* Header com Método, URL e Alias */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "32px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "12px 16px", background: "rgba(0,0,0,0.3)", borderRadius: "8px", border: "1px solid var(--glass-border)", fontFamily: "monospace", fontSize: "15px" }}>
+                <span style={{ 
+                  fontWeight: "bold", 
+                  padding: "3px 8px", 
+                  borderRadius: "5px", 
+                  fontSize: "13px",
+                  background: currentEndpointData.method === "GET" ? "rgba(59, 130, 246, 0.2)" : currentEndpointData.method === "POST" ? "rgba(16, 185, 129, 0.2)" : currentEndpointData.method === "PATCH" ? "rgba(245, 158, 11, 0.2)" : "rgba(239, 68, 68, 0.2)",
+                  color: currentEndpointData.method === "GET" ? "#60a5fa" : currentEndpointData.method === "POST" ? "#34d399" : currentEndpointData.method === "PATCH" ? "#fbbf24" : "#f87171",
+                  border: `1px solid ${currentEndpointData.method === "GET" ? "rgba(59, 130, 246, 0.4)" : currentEndpointData.method === "POST" ? "rgba(16, 185, 129, 0.4)" : currentEndpointData.method === "PATCH" ? "rgba(245, 158, 11, 0.4)" : "rgba(239, 68, 68, 0.4)"}`
+                }}>
+                  {currentEndpointData.method}
+                </span>
+                <span style={{ color: "var(--text-primary)" }}>{currentEndpointData.baseUrl}</span>
+              </div>
+              {currentEndpointData.altUrl && (
+                <div style={{ fontSize: "13px", color: "var(--text-secondary)", paddingLeft: "4px" }}>
+                  💡 <strong>Alias da Rota:</strong> Também responde em <code style={{ color: "#a5b4fc" }}>{currentEndpointData.altUrl}</code>
+                </div>
+              )}
+              {currentEndpointData.description && (
+                <p style={{ color: "var(--text-secondary)", fontSize: "14px", marginTop: "4px", lineHeight: 1.5 }}>
+                  {currentEndpointData.description}
+                </p>
+              )}
             </div>
 
             <div className="grid grid-cols-2" style={{ gap: "32px" }}>
               {/* Left Column: Parameters */}
               <div>
-                <h2 style={{ fontSize: "20px", fontWeight: 600, marginBottom: "20px", borderBottom: "1px solid var(--glass-border)", paddingBottom: "12px" }}>Headers</h2>
+                <h2 style={{ fontSize: "20px", fontWeight: 600, marginBottom: "20px", borderBottom: "1px solid var(--glass-border)", paddingBottom: "12px" }}>Headers Necessários</h2>
                 <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "40px", fontSize: "14px" }}>
                   <tbody>
                     <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-                      <td style={{ padding: "12px 0", fontWeight: 500 }}>Authorization</td>
-                      <td style={{ padding: "12px 0", color: "var(--text-secondary)" }}>Bearer SEU_API_TOKEN</td>
+                      <td style={{ padding: "12px 0", fontWeight: 500, width: "130px" }}>Authorization</td>
+                      <td style={{ padding: "12px 0", color: "var(--text-secondary)" }}>
+                        {currentEndpointData.category === "admin" ? (
+                          <span>
+                            <code style={{ color: "#60a5fa" }}>Bearer ACCESS_TOKEN</code> (ou header <code>x-access-token</code>)<br />
+                            <small style={{ color: "var(--text-muted)" }}>🔑 Master Token administrativo definido no seu <code>.env</code></small>
+                          </span>
+                        ) : (
+                          <span>
+                            <code style={{ color: "#34d399" }}>Bearer INSTANCE_TOKEN</code><br />
+                            <small style={{ color: "var(--text-muted)" }}>Token exclusivo da instância (ou ACCESS_TOKEN)</small>
+                          </span>
+                        )}
+                      </td>
                     </tr>
                     <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
                       <td style={{ padding: "12px 0", fontWeight: 500 }}>Content-Type</td>
@@ -969,21 +1271,29 @@ export default function DocsPage() {
                   </tbody>
                 </table>
 
-                <h2 style={{ fontSize: "20px", fontWeight: 600, marginBottom: "20px", borderBottom: "1px solid var(--glass-border)", paddingBottom: "12px" }}>Parâmetros (JSON Body)</h2>
-                <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                  {currentEndpointData.payloadFields.map((field, i) => (
-                    <div key={i} className="glass-card" style={{ padding: "16px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
-                        <span style={{ fontWeight: 600, fontFamily: "monospace" }}>{field.name}</span>
-                        <span style={{ fontSize: "12px", color: "var(--accent-color)" }}>{field.type}</span>
-                        {field.required && <span className="status-badge status-error" style={{ fontSize: "10px", padding: "2px 8px" }}>Obrigatório</span>}
+                <h2 style={{ fontSize: "20px", fontWeight: 600, marginBottom: "20px", borderBottom: "1px solid var(--glass-border)", paddingBottom: "12px" }}>
+                  {currentEndpointData.payloadFields.length > 0 ? "Parâmetros (JSON Body)" : "Parâmetros de Requisição"}
+                </h2>
+                {currentEndpointData.payloadFields.length > 0 ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                    {currentEndpointData.payloadFields.map((field, i) => (
+                      <div key={i} className="glass-card" style={{ padding: "16px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
+                          <span style={{ fontWeight: 600, fontFamily: "monospace" }}>{field.name}</span>
+                          <span style={{ fontSize: "12px", color: "var(--accent-color)" }}>{field.type}</span>
+                          {field.required && <span className="status-badge status-error" style={{ fontSize: "10px", padding: "2px 8px" }}>Obrigatório</span>}
+                        </div>
+                        <p style={{ color: "var(--text-secondary)", fontSize: "14px", lineHeight: 1.5 }}>
+                          {field.description}
+                        </p>
                       </div>
-                      <p style={{ color: "var(--text-secondary)", fontSize: "14px", lineHeight: 1.5 }}>
-                        {field.description}
-                      </p>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="glass-card" style={{ padding: "20px", color: "var(--text-secondary)", fontSize: "14px" }}>
+                    ℹ️ Este endpoint é do tipo <strong>{currentEndpointData.method}</strong> e não requer corpo (body) na requisição.
+                  </div>
+                )}
               </div>
 
               {/* Right Column: Code Snippets & Test Runner */}
@@ -994,28 +1304,42 @@ export default function DocsPage() {
                     <Play size={16} /> Testar Agora (Interactive Runner)
                   </div>
                   <div style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "16px" }}>
-                    <div style={{ display: "flex", gap: "12px" }}>
-                      <div style={{ flex: 1 }}>
-                        <label style={{ display: "block", fontSize: "12px", color: "var(--text-secondary)", marginBottom: "4px", fontWeight: 500 }}>Instance ID</label>
-                        <input type="text" className="input-field" placeholder="Ex: 3a7f9dbb..." value={testInstanceId} onChange={e => setTestInstanceId(e.target.value)} />
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <label style={{ display: "block", fontSize: "12px", color: "var(--text-secondary)", marginBottom: "4px", fontWeight: 500 }}>API Token</label>
-                        <input type="password" className="input-field" placeholder="Bearer Token da Instância" value={testApiToken} onChange={e => setTestApiToken(e.target.value)} />
+                    <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                      {currentEndpointData.baseUrl.includes("[instanceId]") && (
+                        <div style={{ flex: 1, minWidth: "160px" }}>
+                          <label style={{ display: "block", fontSize: "12px", color: "var(--text-secondary)", marginBottom: "4px", fontWeight: 500 }}>Instance ID</label>
+                          <input type="text" className="input-field" placeholder="Ex: 3a7f9dbb..." value={testInstanceId} onChange={e => setTestInstanceId(e.target.value)} />
+                        </div>
+                      )}
+                      {currentEndpointData.baseUrl.includes("[webhookId]") && (
+                        <div style={{ flex: 1, minWidth: "160px" }}>
+                          <label style={{ display: "block", fontSize: "12px", color: "var(--text-secondary)", marginBottom: "4px", fontWeight: 500 }}>Webhook ID</label>
+                          <input type="text" className="input-field" placeholder="ID do Webhook" value={testWebhookId} onChange={e => setTestWebhookId(e.target.value)} />
+                        </div>
+                      )}
+                      <div style={{ flex: 1, minWidth: "200px" }}>
+                        <label style={{ display: "block", fontSize: "12px", color: "var(--text-secondary)", marginBottom: "4px", fontWeight: 500 }}>
+                          {currentEndpointData.category === "admin" ? "Master ACCESS_TOKEN (.env)" : "API Token da Instância"}
+                        </label>
+                        <input type="password" className="input-field" placeholder={currentEndpointData.category === "admin" ? "Senha/Token mestre do .env" : "Bearer Token da Instância"} value={testApiToken} onChange={e => setTestApiToken(e.target.value)} />
                       </div>
                     </div>
-                    <div>
-                      <label style={{ display: "block", fontSize: "12px", color: "var(--text-secondary)", marginBottom: "4px", fontWeight: 500 }}>Payload JSON</label>
-                      <textarea 
-                        className="input-field" 
-                        style={{ height: "130px", fontFamily: "monospace", resize: "vertical" }}
-                        value={testPayload}
-                        onChange={e => setTestPayload(e.target.value)}
-                      />
-                    </div>
+
+                    {currentEndpointData.payloadFields.length > 0 && (
+                      <div>
+                        <label style={{ display: "block", fontSize: "12px", color: "var(--text-secondary)", marginBottom: "4px", fontWeight: 500 }}>Payload JSON</label>
+                        <textarea 
+                          className="input-field" 
+                          style={{ height: "130px", fontFamily: "monospace", resize: "vertical" }}
+                          value={testPayload}
+                          onChange={e => setTestPayload(e.target.value)}
+                        />
+                      </div>
+                    )}
+
                     <button className="btn-primary" onClick={handleTestRequest} disabled={testLoading} style={{ alignSelf: "flex-start" }}>
                       <Play size={16} />
-                      {testLoading ? "Enviando..." : "Disparar Requisição"}
+                      {testLoading ? "Enviando..." : `Disparar ${currentEndpointData.method}`}
                     </button>
 
                     {testResponse && (
@@ -1023,8 +1347,8 @@ export default function DocsPage() {
                         <div style={{ fontSize: "12px", color: testResponse.ok ? "var(--success-color)" : "var(--error-color)", marginBottom: "8px", fontWeight: "bold" }}>
                           Status de Resposta: {testResponse.status}
                         </div>
-                        <pre style={{ fontSize: "12px", color: "var(--text-secondary)", whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0 }}>
-                          {JSON.stringify(testResponse.data || testResponse.error, null, 2)}
+                        <pre style={{ fontSize: "12px", color: "var(--text-secondary)", whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0, maxHeight: "250px", overflowY: "auto" }}>
+                          {JSON.stringify(testResponse.data !== undefined ? testResponse.data : testResponse.error, null, 2)}
                         </pre>
                       </div>
                     )}
@@ -1038,10 +1362,9 @@ export default function DocsPage() {
                   </div>
                   <div style={{ padding: "20px", overflowX: "auto" }}>
                     <pre style={{ fontFamily: "monospace", fontSize: "13px", color: "var(--text-primary)", whiteSpace: "pre-wrap", margin: 0 }}>
-{`curl -X POST "${currentEndpointData.baseUrl.replace('[instanceId]', 'SUA_INSTANCE_ID')}" \\
-  -H "Authorization: Bearer SEU_API_TOKEN" \\
-  -H "Content-Type: application/json" \\
-  -d '${JSON.stringify(currentEndpointData.exampleJson, null, 2)}'`}
+{`curl -X ${currentEndpointData.method} "${currentEndpointData.baseUrl.replace('[instanceId]', 'SUA_INSTANCE_ID').replace('[webhookId]', 'SEU_WEBHOOK_ID')}" \\
+  -H "Authorization: Bearer ${currentEndpointData.category === "admin" ? "SEU_ACCESS_TOKEN" : "SEU_API_TOKEN"}" \\
+  -H "Content-Type: application/json"${currentEndpointData.exampleJson ? ` \\\n  -d '${JSON.stringify(currentEndpointData.exampleJson, null, 2)}'` : ''}`}
                     </pre>
                   </div>
                 </div>
@@ -1053,13 +1376,12 @@ export default function DocsPage() {
                   </div>
                   <div style={{ padding: "20px", overflowX: "auto" }}>
                     <pre style={{ fontFamily: "monospace", fontSize: "13px", color: "#61dafb", whiteSpace: "pre-wrap", margin: 0 }}>
-{`const response = await fetch("${currentEndpointData.baseUrl.replace('[instanceId]', 'SUA_INSTANCE_ID')}", {
-  method: "POST",
+{`const response = await fetch("${currentEndpointData.baseUrl.replace('[instanceId]', 'SUA_INSTANCE_ID').replace('[webhookId]', 'SEU_WEBHOOK_ID')}", {
+  method: "${currentEndpointData.method}",
   headers: {
-    "Authorization": "Bearer SEU_API_TOKEN",
+    "Authorization": "Bearer ${currentEndpointData.category === "admin" ? "SEU_ACCESS_TOKEN" : "SEU_API_TOKEN"}",
     "Content-Type": "application/json"
-  },
-  body: JSON.stringify(${JSON.stringify(currentEndpointData.exampleJson, null, 4).replace(/\n/g, '\n  ')})
+  }${currentEndpointData.exampleJson ? `,\n  body: JSON.stringify(${JSON.stringify(currentEndpointData.exampleJson, null, 4).replace(/\n/g, '\n  ')})` : ''}
 });
 
 const data = await response.json();

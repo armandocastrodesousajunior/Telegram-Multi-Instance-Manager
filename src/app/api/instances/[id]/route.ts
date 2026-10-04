@@ -25,7 +25,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
 
-    return NextResponse.json(instance);
+    const { session, ...safeInstance } = instance;
+    return NextResponse.json(safeInstance);
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
@@ -92,8 +93,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     invalidateInstanceSettingsCache(id);
 
-    return NextResponse.json(updated);
+    const { session, ...safeUpdated } = updated;
+    return NextResponse.json(safeUpdated);
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
+
+export const PUT = PATCH;
+

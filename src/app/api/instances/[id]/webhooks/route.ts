@@ -41,20 +41,36 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   try {
     const { id } = await params;
+
+    const instance = await prisma.instance.findUnique({
+      where: { id },
+      select: { id: true }
+    });
+    if (!instance) {
+      return NextResponse.json({ error: 'Instance not found' }, { status: 404 });
+    }
+
     const body = await req.json();
     const { name, url, events, includeOutgoing = true } = body;
+
+    if (!url || typeof url !== 'string' || !url.trim()) {
+      return NextResponse.json({ error: 'Webhook URL is required and must be a string' }, { status: 400 });
+    }
+
+    const webhookEvents = Array.isArray(events) && events.length > 0 ? events : ['message'];
+    const webhookName = (typeof name === 'string' && name.trim()) ? name.trim() : 'Webhook ' + url.trim();
 
     const webhook = await prisma.webhook.create({
       data: {
         instanceId: id,
-        name,
-        url,
-        events: JSON.stringify(events),
-        includeOutgoing
+        name: webhookName,
+        url: url.trim(),
+        events: JSON.stringify(webhookEvents),
+        includeOutgoing: Boolean(includeOutgoing)
       }
     });
 
-    return NextResponse.json({ ...webhook, events: JSON.parse(webhook.events) });
+    return NextResponse.json({ ...webhook, events: JSON.parse(webhook.events) }, { status: 201 });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

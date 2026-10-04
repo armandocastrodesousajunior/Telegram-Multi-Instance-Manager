@@ -291,6 +291,7 @@ export async function GET(req: NextRequest) {
     },
     call: {
       name: "Phone Call (Ligação MTProto)",
+      category: "messages",
       method: "POST",
       url: `${origin}/api/v1/:instanceId/call`,
       description: "Inicia uma ligação telefônica via conta pessoal da instância. Toca no aparelho do lead, conecta, aguarda 5 segundos (ou durationSeconds) e desliga automaticamente com telemetria completa.",
@@ -300,6 +301,84 @@ export async function GET(req: NextRequest) {
         { field: "timeoutSeconds", type: "number", required: false, description: "Tempo limite tocando antes de considerar missed (padrão: 30)" },
         { field: "video", type: "boolean", required: false, description: "Se true, toca com ícone de chamada de vídeo (padrão: false)" }
       ]
+    },
+    "instances-list": {
+      name: "Listar Instâncias (List Instances)",
+      category: "admin",
+      method: "GET",
+      url: `${origin}/api/v1/instances`,
+      altUrl: `${origin}/api/instances`,
+      auth: "Master ACCESS_TOKEN (Authorization: Bearer <ACCESS_TOKEN> ou x-access-token)",
+      description: "Retorna a lista de todas as instâncias cadastradas no sistema com dados essenciais (id, nome, token da instância, status, idioma, telefone, tipo). A string de sessão MTProto é mantida sigilosa e omitida.",
+      body: []
+    },
+    "webhook-create": {
+      name: "Criar Webhook (Create Webhook)",
+      category: "admin",
+      method: "POST",
+      url: `${origin}/api/v1/instances/:instanceId/webhooks`,
+      altUrl: `${origin}/api/instances/:instanceId/webhooks`,
+      auth: "Master ACCESS_TOKEN",
+      description: "Cria e vincula um webhook a uma instância para receber eventos em tempo real.",
+      body: [
+        { field: "url", type: "string", required: true, description: "URL HTTPS pública de destino que receberá os POSTs de eventos" },
+        { field: "name", type: "string", required: false, description: "Nome identificador do webhook (ex: 'N8N Automação')" },
+        { field: "events", type: "string[]", required: false, description: "Array com nomes dos eventos desejados (ex: ['message', 'chat.typing', 'call.ended']). Padrão: ['message']" },
+        { field: "includeOutgoing", type: "boolean", required: false, description: "Se true, despacha também mensagens enviadas pela própria instância. Padrão: true" }
+      ]
+    },
+    "webhooks-list": {
+      name: "Listar Webhooks da Instância (List Webhooks)",
+      category: "admin",
+      method: "GET",
+      url: `${origin}/api/v1/instances/:instanceId/webhooks`,
+      altUrl: `${origin}/api/instances/:instanceId/webhooks`,
+      auth: "Master ACCESS_TOKEN",
+      description: "Lista todos os webhooks cadastrados para uma determinada instância.",
+      body: []
+    },
+    "webhook-delete": {
+      name: "Deletar Webhook (Delete Webhook)",
+      category: "admin",
+      method: "DELETE",
+      url: `${origin}/api/v1/instances/:instanceId/webhooks/:webhookId`,
+      altUrl: `${origin}/api/instances/:instanceId/webhooks/:webhookId`,
+      auth: "Master ACCESS_TOKEN",
+      description: "Remove um webhook cadastrado de uma instância.",
+      body: []
+    },
+    "instances-get": {
+      name: "Consultar Detalhes da Instância (Get Instance)",
+      category: "admin",
+      method: "GET",
+      url: `${origin}/api/v1/instances/:instanceId`,
+      altUrl: `${origin}/api/instances/:instanceId`,
+      auth: "Master ACCESS_TOKEN",
+      description: "Obtém as informações completas, configurações ativas e lista de webhooks de uma instância específica.",
+      body: []
+    },
+    "instances-update": {
+      name: "Atualizar Instância (Update Instance)",
+      category: "admin",
+      method: "PATCH",
+      url: `${origin}/api/v1/instances/:instanceId`,
+      altUrl: `${origin}/api/instances/:instanceId`,
+      auth: "Master ACCESS_TOKEN",
+      description: "Atualiza os dados cadastrais da instância (nome ou idioma). Também aceita método PUT.",
+      body: [
+        { field: "name", type: "string", required: false, description: "Novo nome da instância" },
+        { field: "language", type: "string", required: false, description: "Código do idioma padrão (ex: 'pt-BR', 'en-US')" }
+      ]
+    },
+    "instances-delete": {
+      name: "Deletar Instância (Delete Instance)",
+      category: "admin",
+      method: "DELETE",
+      url: `${origin}/api/v1/instances/:instanceId`,
+      altUrl: `${origin}/api/instances/:instanceId`,
+      auth: "Master ACCESS_TOKEN",
+      description: "Desconecta a instância do Telegram e apaga permanentemente seu registro no banco de dados com seus dados em cascata.",
+      body: []
     }
   };
 
@@ -369,18 +448,32 @@ export async function GET(req: NextRequest) {
   if (endpoint && endpointDocs[endpoint]) {
     const item = endpointDocs[endpoint];
     md += `## Endpoint REST: \`${item.method} ${item.url}\`\n\n`;
+    if (item.altUrl) {
+      md += `> 💡 **Alias:** Este endpoint também pode ser acessado em \`${item.altUrl}\`\n\n`;
+    }
     md += `**Nome:** ${item.name}\n\n`;
     md += `**Descrição:** ${item.description}\n\n`;
-    md += `### Headers Necessários:\n`;
-    md += `- \`Authorization: Bearer <API_TOKEN>\`\n`;
-    md += `- \`Content-Type: application/json\`\n\n`;
-    md += `### Parâmetros do Body (JSON):\n\n`;
-    md += `| Campo | Tipo | Obrigatório | Descrição |\n`;
-    md += `| :--- | :--- | :--- | :--- |\n`;
-    for (const b of item.body) {
-      md += `| \`${b.field}\` | \`${b.type}\` | ${b.required ? 'Sim' : 'Não'} | ${b.description} |\n`;
+    md += `### Autenticação e Headers Necessários:\n`;
+    if (item.category === 'admin') {
+      md += `- \`Authorization: Bearer <ACCESS_TOKEN>\` (ou header \`x-access-token: <ACCESS_TOKEN>\`)\n`;
+      md += `  > 🔑 **Segurança Administrativa:** Este endpoint gerencia instâncias/webhooks e exige o **ACCESS_TOKEN** global definido nas variáveis de ambiente (\`.env\`).\n`;
+    } else {
+      md += `- \`Authorization: Bearer <TOKEN_DA_INSTANCIA>\` (ou token global \`ACCESS_TOKEN\`)\n`;
     }
-    md += `\n`;
+    md += `- \`Content-Type: application/json\`\n\n`;
+
+    if (item.body && item.body.length > 0) {
+      md += `### Parâmetros do Body (JSON):\n\n`;
+      md += `| Campo | Tipo | Obrigatório | Descrição |\n`;
+      md += `| :--- | :--- | :--- | :--- |\n`;
+      for (const b of item.body) {
+        md += `| \`${b.field}\` | \`${b.type}\` | ${b.required ? 'Sim' : 'Não'} | ${b.description} |\n`;
+      }
+      md += `\n`;
+    } else {
+      md += `### Parâmetros do Body:\n`;
+      md += `Nenhum parâmetro no body necessário (requisição sem payload).\n\n`;
+    }
 
     return new NextResponse(md, {
       status: 200,
@@ -406,16 +499,41 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  if (section === 'endpoints' || section === 'all') {
-    md += `## 🚀 Seção de Endpoints REST\n\n`;
-    for (const [key, item] of Object.entries(endpointDocs)) {
-      md += `### \`${item.method} ${item.url}\`\n`;
-      md += `- **Descrição:** ${item.description}\n`;
-      md += `- **Body:**\n`;
-      for (const b of item.body) {
-        md += `  - \`${b.field}\` (${b.type}, ${b.required ? 'obrigatório' : 'opcional'}): ${b.description}\n`;
+  if (section === 'endpoints' || section === 'admin' || section === 'all') {
+    const adminEndpoints = Object.entries(endpointDocs).filter(([_, item]) => item.category === 'admin');
+    const messageEndpoints = Object.entries(endpointDocs).filter(([_, item]) => item.category !== 'admin');
+
+    if (adminEndpoints.length > 0 && (section === 'admin' || section === 'all' || section === 'endpoints')) {
+      md += `## ⚙️ Gerenciamento de Instâncias & Webhooks (Endpoints Administrativos)\n\n`;
+      md += `> 🔑 **Autenticação:** Requer o **ACCESS_TOKEN** global definido no \`.env\` via header \`Authorization: Bearer <ACCESS_TOKEN>\` ou \`x-access-token: <ACCESS_TOKEN>\`.\n\n`;
+      for (const [key, item] of adminEndpoints) {
+        md += `### \`${item.method} ${item.url}\` (${item.name})\n`;
+        if (item.altUrl) md += `- **Alias:** \`${item.altUrl}\`\n`;
+        md += `- **Descrição:** ${item.description}\n`;
+        if (item.body && item.body.length > 0) {
+          md += `- **Body:**\n`;
+          for (const b of item.body) {
+            md += `  - \`${b.field}\` (${b.type}, ${b.required ? 'obrigatório' : 'opcional'}): ${b.description}\n`;
+          }
+        } else {
+          md += `- **Body:** Nenhum payload necessário.\n`;
+        }
+        md += `\n`;
       }
-      md += `\n`;
+    }
+
+    if (section !== 'admin') {
+      md += `## 🚀 Envio de Mensagens & Ações (API da Instância)\n\n`;
+      md += `> 🔑 **Autenticação:** Requer \`Authorization: Bearer <TOKEN_DA_INSTANCIA>\` (ou o ACCESS_TOKEN global).\n\n`;
+      for (const [key, item] of messageEndpoints) {
+        md += `### \`${item.method} ${item.url}\` (${item.name})\n`;
+        md += `- **Descrição:** ${item.description}\n`;
+        md += `- **Body:**\n`;
+        for (const b of item.body) {
+          md += `  - \`${b.field}\` (${b.type}, ${b.required ? 'obrigatório' : 'opcional'}): ${b.description}\n`;
+        }
+        md += `\n`;
+      }
     }
   }
 

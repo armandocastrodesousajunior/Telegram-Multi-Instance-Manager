@@ -7,6 +7,19 @@ export async function GET(req: NextRequest) {
 
   try {
     const instances = await prisma.instance.findMany({
+      select: {
+        id: true,
+        name: true,
+        language: true,
+        type: true,
+        botType: true,
+        botToken: true,
+        businessConnectionId: true,
+        phone: true,
+        status: true,
+        token: true,
+        createdAt: true,
+      },
       orderBy: { createdAt: 'desc' }
     });
     return NextResponse.json(instances);
