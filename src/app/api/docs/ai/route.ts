@@ -41,6 +41,7 @@ export async function GET(req: NextRequest) {
         { field: "type", type: "string", description: "Tipo de mensagem: 'text', 'image', 'view_once_image', 'video', 'view_once_video', 'audio', 'view_once_audio', 'voice', 'view_once_voice', 'gif', 'sticker', 'document', 'unknown'" },
         { field: "content", type: "string", description: "Texto da mensagem ou legenda (caption) da mídia" },
         { field: "senderId", type: "string", description: "ID numérico do remetente no Telegram" },
+        { field: "phone", type: "string", description: "Número de telefone do remetente no formato internacional (+...) quando público na privacidade do Telegram, ou string vazia (\"\") se oculto" },
         { field: "chatId", type: "string", description: "ID numérico do chat/conversa no Telegram" },
         { field: "date", type: "number", description: "Timestamp Unix em segundos do envio da mensagem" },
         { field: "isOutgoing", type: "boolean", description: "false se veio do lead; true se foi enviada pela sua própria instância" },
@@ -57,6 +58,7 @@ export async function GET(req: NextRequest) {
           type: "text",
           content: "Olá! Gostaria de saber mais informações.",
           senderId: "8769981356",
+          phone: "+5511999999999",
           chatId: "8769981356",
           date: 1729000000,
           isOutgoing: false,
@@ -73,6 +75,7 @@ export async function GET(req: NextRequest) {
         { field: "type", type: "string", description: "Tipo de conteúdo da mensagem" },
         { field: "content", type: "string", description: "Texto ou legenda atualizada após edição" },
         { field: "senderId", type: "string", description: "ID do remetente que realizou a edição" },
+        { field: "phone", type: "string", description: "Número de telefone do remetente (+...) quando público na privacidade, ou string vazia (\"\")" },
         { field: "chatId", type: "string", description: "ID do chat" },
         { field: "date", type: "number", description: "Timestamp Unix da mensagem" },
         { field: "isOutgoing", type: "boolean", description: "Se foi mensagem de saída (true) ou entrada (false)" },
@@ -85,7 +88,8 @@ export async function GET(req: NextRequest) {
       description: "Disparado quando uma ou mais mensagens são apagadas no chat por qualquer participante.",
       parameters: [
         { field: "messages", type: "number[]", description: "Array contendo os IDs numéricos de todas as mensagens apagadas" },
-        { field: "channelId", type: "string | null", description: "ID do canal se ocorreu em canal/supergrupo, null para privado" }
+        { field: "channelId", type: "string | null", description: "ID do canal se ocorreu em canal/supergrupo, null para privado" },
+        { field: "phone", type: "string", description: "Telefone do usuário quando disponível ou string vazia (\"\")" }
       ]
     },
     "chat.typing": {
@@ -94,6 +98,7 @@ export async function GET(req: NextRequest) {
       description: "Notificação em tempo real de que o lead começou a digitar texto no chat.",
       parameters: [
         { field: "userId", type: "string", description: "ID do usuário executando a ação" },
+        { field: "phone", type: "string", description: "Número de telefone do usuário (+...) quando disponível ou string vazia (\"\")" },
         { field: "chatId", type: "string", description: "ID do chat onde ocorre a digitação" },
         { field: "action", type: "string", description: "Classe da ação: 'SendMessageTypingAction'" }
       ]
@@ -104,6 +109,7 @@ export async function GET(req: NextRequest) {
       description: "Notificação de que o lead está gravando uma mensagem de voz no microfone.",
       parameters: [
         { field: "userId", type: "string", description: "ID do usuário" },
+        { field: "phone", type: "string", description: "Número de telefone do usuário (+...) quando disponível ou string vazia (\"\")" },
         { field: "chatId", type: "string", description: "ID do chat" },
         { field: "action", type: "string", description: "Classe da ação: 'SendMessageRecordAudioAction'" }
       ]
@@ -114,6 +120,7 @@ export async function GET(req: NextRequest) {
       description: "Notificação de que o lead está carregando uma imagem para enviar.",
       parameters: [
         { field: "userId", type: "string", description: "ID do usuário" },
+        { field: "phone", type: "string", description: "Número de telefone do usuário (+...) quando disponível ou string vazia (\"\")" },
         { field: "chatId", type: "string", description: "ID do chat" },
         { field: "action", type: "string", description: "Classe da ação: 'SendMessageUploadPhotoAction'" }
       ]
@@ -124,6 +131,7 @@ export async function GET(req: NextRequest) {
       description: "Notificação de que o lead está gravando ou fazendo upload de um vídeo.",
       parameters: [
         { field: "userId", type: "string", description: "ID do usuário" },
+        { field: "phone", type: "string", description: "Número de telefone do usuário (+...) quando disponível ou string vazia (\"\")" },
         { field: "chatId", type: "string", description: "ID do chat" },
         { field: "action", type: "string", description: "Classe da ação: 'SendMessageUploadVideoAction'" }
       ]
@@ -134,6 +142,7 @@ export async function GET(req: NextRequest) {
       description: "Notificação de que o lead está anexando um arquivo/documento.",
       parameters: [
         { field: "userId", type: "string", description: "ID do usuário" },
+        { field: "phone", type: "string", description: "Número de telefone do usuário (+...) quando disponível ou string vazia (\"\")" },
         { field: "chatId", type: "string", description: "ID do chat" },
         { field: "action", type: "string", description: "Classe da ação: 'SendMessageUploadDocumentAction'" }
       ]
@@ -145,6 +154,7 @@ export async function GET(req: NextRequest) {
       parameters: [
         { field: "callId", type: "string", description: "ID único da chamada no protocolo MTProto" },
         { field: "chatId", type: "string", description: "Telefone ou chat ID do destinatário" },
+        { field: "phone", type: "string", description: "Número de telefone do destinatário (+...)" },
         { field: "durationSeconds", type: "number", description: "Duração planejada após o atendimento (padrão: 5s)" },
         { field: "timeoutSeconds", type: "number", description: "Tempo limite tocando antes de desistir (padrão: 30s)" },
         { field: "status", type: "string", description: "'ringing'" },
@@ -158,6 +168,7 @@ export async function GET(req: NextRequest) {
       parameters: [
         { field: "callId", type: "string", description: "ID único da chamada" },
         { field: "chatId", type: "string", description: "Destinatário que atendeu" },
+        { field: "phone", type: "string", description: "Número de telefone do destinatário (+...)" },
         { field: "durationSeconds", type: "number", description: "Duração planejada da conexão (padrão: 5s)" },
         { field: "status", type: "string", description: "'accepted'" },
         { field: "answeredAt", type: "number", description: "Timestamp em ms do momento do atendimento" }
@@ -170,6 +181,7 @@ export async function GET(req: NextRequest) {
       parameters: [
         { field: "callId", type: "string", description: "ID único da chamada" },
         { field: "chatId", type: "string", description: "Destinatário" },
+        { field: "phone", type: "string", description: "Número de telefone do destinatário (+...)" },
         { field: "answered", type: "boolean", description: "true" },
         { field: "status", type: "string", description: "'completed'" },
         { field: "durationSeconds", type: "number", description: "Duração real da chamada em segundos" },
@@ -189,6 +201,7 @@ export async function GET(req: NextRequest) {
       parameters: [
         { field: "callId", type: "string", description: "ID único da chamada" },
         { field: "chatId", type: "string", description: "Destinatário" },
+        { field: "phone", type: "string", description: "Número de telefone do destinatário (+...)" },
         { field: "answered", type: "boolean", description: "true" },
         { field: "status", type: "string", description: "'abandoned'" },
         { field: "durationSeconds", type: "number", description: "Tempo real em segundos conectado antes do lead desligar" },
@@ -202,6 +215,7 @@ export async function GET(req: NextRequest) {
       parameters: [
         { field: "callId", type: "string", description: "ID único da chamada" },
         { field: "chatId", type: "string", description: "Destinatário" },
+        { field: "phone", type: "string", description: "Número de telefone do destinatário (+...)" },
         { field: "answered", type: "boolean", description: "false" },
         { field: "status", type: "string", description: "'declined'" },
         { field: "disconnectReason", type: "string", description: "'busy'" }
@@ -214,6 +228,7 @@ export async function GET(req: NextRequest) {
       parameters: [
         { field: "callId", type: "string", description: "ID único da chamada" },
         { field: "chatId", type: "string", description: "Destinatário" },
+        { field: "phone", type: "string", description: "Número de telefone do destinatário (+...)" },
         { field: "answered", type: "boolean", description: "false" },
         { field: "status", type: "string", description: "'missed'" },
         { field: "disconnectReason", type: "string", description: "'missed'" }
@@ -226,6 +241,7 @@ export async function GET(req: NextRequest) {
       parameters: [
         { field: "callId", type: "string", description: "ID da chamada" },
         { field: "chatId", type: "string", description: "Destinatário" },
+        { field: "phone", type: "string", description: "Número de telefone do destinatário (+...)" },
         { field: "answered", type: "boolean", description: "Se o lead atendeu ou não" },
         { field: "status", type: "string", description: "'completed' | 'abandoned' | 'declined' | 'missed'" },
         { field: "durationSeconds", type: "number", description: "Tempo de conexão em segundos" },

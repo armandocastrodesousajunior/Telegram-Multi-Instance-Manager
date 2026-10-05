@@ -611,6 +611,7 @@ export default function DocsPage() {
               type: "text",
               content: "Olá, gostaria de saber mais informações!",
               senderId: "8769981356",
+              phone: "+5511999999999",
               chatId: "8769981356",
               date: 1729000000,
               isOutgoing: false,
@@ -634,6 +635,7 @@ export default function DocsPage() {
             },
             { name: "content", type: "string", description: "O texto da mensagem de texto, ou a legenda (caption) da mídia enviada." },
             { name: "senderId", type: "string", description: "ID numérico do Telegram do usuário que enviou a mensagem." },
+            { name: "phone", type: "string", description: "Número de telefone do usuário no formato internacional (ex: '+5511999999999'), se visível/público de acordo com a privacidade do Telegram. Caso o usuário oculte o número de telefone em suas configurações de privacidade, este campo retorna string vazia (\"\")." },
             { name: "chatId", type: "string", description: "ID numérico do chat/conversa no Telegram." },
             { name: "date", type: "number", description: "Timestamp Unix (em segundos) do envio da mensagem." },
             { name: "isOutgoing", type: "boolean", description: "false se a mensagem veio do lead para você; true se foi enviada pela sua própria instância." },
@@ -653,6 +655,7 @@ export default function DocsPage() {
               type: "view_once_video",
               content: "olha esse vídeo que gravei para você...",
               senderId: "8769981356",
+              phone: "+5511999999999",
               chatId: "8769981356",
               date: 1729000120,
               isOutgoing: false,
@@ -672,6 +675,7 @@ export default function DocsPage() {
             { name: "type", type: "string", description: "Tipo da mensagem (ex: 'text', 'image', etc.)." },
             { name: "content", type: "string", description: "O novo texto ou legenda após a edição realizada pelo usuário." },
             { name: "senderId", type: "string", description: "ID numérico do Telegram de quem editou." },
+            { name: "phone", type: "string", description: "Número de telefone do remetente (+...) quando disponível pelas permissões de privacidade do Telegram, ou string vazia (\"\")." },
             { name: "chatId", type: "string", description: "ID numérico do chat onde a edição ocorreu." },
             { name: "date", type: "number", description: "Timestamp Unix da data da mensagem." },
             { name: "isOutgoing", type: "boolean", description: "Se a mensagem editada foi de saída (true) ou recebida (false)." },
@@ -691,6 +695,7 @@ export default function DocsPage() {
               type: "text",
               content: "Mensagem corrigida pelo lead: quero comprar agora!",
               senderId: "8769981356",
+              phone: "+5511999999999",
               chatId: "8769981356",
               date: 1729000150,
               isOutgoing: false,
@@ -707,7 +712,8 @@ export default function DocsPage() {
           description: "Disparado quando uma ou mais mensagens são apagadas na conversa por qualquer participante.",
           fields: [
             { name: "messages", type: "number[]", description: "Array contendo os IDs numéricos de todas as mensagens que foram apagadas." },
-            { name: "channelId", type: "string | null", description: "ID do canal ou supergrupo se a exclusão ocorreu em um grupo/canal. null se ocorreu em chat privado 1-a-1." }
+            { name: "channelId", type: "string | null", description: "ID do canal ou supergrupo se a exclusão ocorreu em um grupo/canal. null se ocorreu em chat privado 1-a-1." },
+            { name: "phone", type: "string", description: "Telefone do usuário quando disponível, ou string vazia (\"\")." }
           ],
           exampleJson: {
             event: "deleted_message",
@@ -720,7 +726,8 @@ export default function DocsPage() {
             },
             data: {
               messages: [98120, 98121],
-              channelId: null
+              channelId: null,
+              phone: ""
             }
           }
         };
@@ -745,6 +752,7 @@ export default function DocsPage() {
           description: current.desc,
           fields: [
             { name: "userId", type: "string", description: "ID numérico do usuário do Telegram que está executando a ação." },
+            { name: "phone", type: "string", description: "Número de telefone do usuário (+...) quando disponível pelas permissões de privacidade do Telegram, ou string vazia (\"\")." },
             { name: "chatId", type: "string", description: "ID do chat onde a ação está acontecendo." },
             { name: "action", type: "string", description: `A classe de ação interna do Telegram MTProto: '${current.action}'.` }
           ],
@@ -759,6 +767,7 @@ export default function DocsPage() {
             },
             data: {
               userId: "8769981356",
+              phone: "+5511999999999",
               chatId: "8769981356",
               action: current.action
             }
@@ -775,6 +784,7 @@ export default function DocsPage() {
           fields: [
             { name: "callId", type: "string", description: "ID numérico exclusivo da chamada no protocolo MTProto." },
             { name: "chatId", type: "string | number", description: "Telefone ou Chat ID do destinatário que está recebendo a chamada." },
+            { name: "phone", type: "string", description: "Número de telefone do destinatário no formato internacional (+...)." },
             { name: "durationSeconds", type: "number", description: "Duração programada da ligação após o atendimento (padrão: 5 segundos)." },
             { name: "timeoutSeconds", type: "number", description: "Tempo limite configurado para o lead atender antes de desistir (padrão: 30 segundos)." },
             { name: "status", type: "string", description: "Status atual da chamada ('ringing')." },
@@ -792,6 +802,7 @@ export default function DocsPage() {
             data: {
               callId: "982739182379123891",
               chatId: "5511999999999",
+              phone: "+5511999999999",
               durationSeconds: 5,
               timeoutSeconds: 30,
               status: "ringing",
@@ -809,6 +820,7 @@ export default function DocsPage() {
           fields: [
             { name: "callId", type: "string", description: "ID numérico exclusivo da chamada." },
             { name: "chatId", type: "string | number", description: "Destinatário que atendeu a ligação." },
+            { name: "phone", type: "string", description: "Número de telefone do destinatário no formato internacional (+...)." },
             { name: "durationSeconds", type: "number", description: "Duração planejada da conexão (padrão: 5 segundos)." },
             { name: "status", type: "string", description: "Status atual ('accepted')." },
             { name: "answeredAt", type: "number", description: "Timestamp Unix em milissegundos do momento exato do atendimento." }
@@ -825,6 +837,7 @@ export default function DocsPage() {
             data: {
               callId: "982739182379123891",
               chatId: "5511999999999",
+              phone: "+5511999999999",
               durationSeconds: 5,
               status: "accepted",
               answeredAt: 1729000204210
@@ -904,6 +917,7 @@ export default function DocsPage() {
           fields: [
             { name: "callId", type: "string", description: "ID numérico exclusivo da chamada no Telegram MTProto." },
             { name: "chatId", type: "string | number", description: "Telefone ou Chat ID do destinatário da ligação." },
+            { name: "phone", type: "string", description: "Número de telefone do destinatário no formato internacional (+...)." },
             { name: "answered", type: "boolean", description: "true se o lead atendeu a ligação; false se não chegou a atender." },
             { name: "status", type: "string", description: "Status final da chamada: 'completed' (completou 100%), 'abandoned' (desligou antes), 'declined' (rejeitou), 'missed' (não atendeu)." },
             { name: "durationSeconds", type: "number", description: "Tempo real em segundos que a chamada durou conectada após o atendimento." },
@@ -927,6 +941,7 @@ export default function DocsPage() {
             data: {
               callId: "982739182379123891",
               chatId: "5511999999999",
+              phone: "+5511999999999",
               answered: current.sampleAnswered,
               status: current.sampleStatus,
               durationSeconds: current.sampleDuration,

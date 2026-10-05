@@ -7,6 +7,7 @@ export interface ActiveCall {
   callId: string;
   instanceId: string;
   chatId: string;
+  phone?: string;
   durationSeconds: number;
   timeoutSeconds: number;
   state: 'ringing' | 'accepted' | 'completed' | 'abandoned' | 'declined' | 'missed';
@@ -121,10 +122,14 @@ class CallManager {
     const callId = phoneCallObj.id?.toString() || randomId.toString();
     const accessHash = phoneCallObj.accessHash;
 
+    const rawPhone = (peerEntity as any)?.phone || (/^\+?\d{10,15}$/.test(chatId) ? chatId : '');
+    const phone = rawPhone ? (rawPhone.startsWith('+') ? rawPhone : `+${rawPhone}`) : '';
+
     const activeCall: ActiveCall = {
       callId,
       instanceId,
       chatId,
+      phone,
       durationSeconds,
       timeoutSeconds,
       state: 'ringing',
@@ -150,6 +155,7 @@ class CallManager {
     await dispatchWebhook(instanceId, 'call.ringing', {
       callId,
       chatId,
+      phone,
       durationSeconds,
       timeoutSeconds,
       status: 'ringing',
@@ -236,9 +242,11 @@ class CallManager {
 
         console.log(`[CallManager] Chamada ${callId} foi atendida pelo usuário!`);
 
+        const acceptedPhone = call.phone || (/^\+?\d{10,15}$/.test(call.chatId) ? (call.chatId.startsWith('+') ? call.chatId : `+${call.chatId}`) : '');
         await dispatchWebhook(instanceId, 'call.accepted', {
           callId,
           chatId: call.chatId,
+          phone: acceptedPhone,
           durationSeconds: call.durationSeconds,
           status: 'accepted',
           answeredAt: call.answeredAt
@@ -291,9 +299,11 @@ class CallManager {
 
       call.state = finalStatus;
 
+      const callPhone = call.phone || (/^\+?\d{10,15}$/.test(call.chatId) ? (call.chatId.startsWith('+') ? call.chatId : `+${call.chatId}`) : '');
       const telemetryPayload = {
         callId,
         chatId: call.chatId,
+        phone: callPhone,
         answered: !!call.answeredAt || durationSeconds > 0,
         status: finalStatus,
         durationSeconds,

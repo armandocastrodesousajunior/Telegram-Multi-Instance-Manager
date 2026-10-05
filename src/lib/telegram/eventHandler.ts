@@ -11,9 +11,9 @@ const LOG_PREFIX = '[TG-EventHandler]';
  * Popula proativamente o cache de entidades da GramJS a partir do evento de mensagem.
  * 
  * Estratégia: tentar múltiplos métodos de resolução em cascata, com logs detalhados
- * para diagnóstico em produção.
+ * para diagnóstico em produção. Retorna a entidade de remetente caso resolvida.
  */
-async function warmEntityFromEvent(client: TelegramClient, event: any, instanceId: string) {
+async function warmEntityFromEvent(client: TelegramClient, event: any, instanceId: string): Promise<any> {
   const message = event.message;
   const chatIdStr = message?.chatId?.toString() ?? 'unknown';
   const senderIdStr = message?.senderId?.toString() ?? 'unknown';
@@ -23,7 +23,7 @@ async function warmEntityFromEvent(client: TelegramClient, event: any, instanceI
 
   if (isOutgoing) {
     console.log(`${LOG_PREFIX} [${instanceId}] Mensagem sainte, pulando warm-up de entidade.`);
-    return;
+    return null;
   }
 
   // ── Passo 1: tentar event.getSender() ─────────────────────────────────────
@@ -35,9 +35,10 @@ async function warmEntityFromEvent(client: TelegramClient, event: any, instanceI
       try {
         const inputEntity = await client.getInputEntity(sender);
         console.log(`${LOG_PREFIX} [${instanceId}] ✅ Entidade cacheada via getInputEntity(sender): className=${(inputEntity as any)?.className}`);
-        return; // Sucesso — sai aqui
+        return sender;
       } catch (cacheErr: any) {
         console.warn(`${LOG_PREFIX} [${instanceId}] getInputEntity(sender) falhou: ${cacheErr.message}`);
+        return sender;
       }
     } else {
       console.warn(`${LOG_PREFIX} [${instanceId}] getSender() retornou null/undefined.`);
@@ -54,7 +55,10 @@ async function warmEntityFromEvent(client: TelegramClient, event: any, instanceI
     try {
       const inputEntity = await client.getInputEntity(message.peerId);
       console.log(`${LOG_PREFIX} [${instanceId}] ✅ Entidade cacheada via getInputEntity(peerId): className=${(inputEntity as any)?.className}`);
-      return;
+      try {
+        return await client.getEntity(message.peerId);
+      } catch {}
+      return null;
     } catch (peerErr: any) {
       console.warn(`${LOG_PREFIX} [${instanceId}] getInputEntity(peerId) falhou: ${peerErr.message}`);
     }
@@ -69,6 +73,7 @@ async function warmEntityFromEvent(client: TelegramClient, event: any, instanceI
       if (message?.peerId) {
         const inputEntity = await client.getInputEntity(message.peerId);
         console.log(`${LOG_PREFIX} [${instanceId}] ✅ Entidade encontrada no cache após recarregar diálogos: className=${(inputEntity as any)?.className}`);
+        return await client.getEntity(message.peerId);
       }
     } catch (retryErr: any) {
       console.warn(`${LOG_PREFIX} [${instanceId}] Entidade ainda NÃO encontrada após recarregar diálogos. Erro: ${retryErr.message}`);
@@ -77,6 +82,96 @@ async function warmEntityFromEvent(client: TelegramClient, event: any, instanceI
   } catch (dialogErr: any) {
     console.error(`${LOG_PREFIX} [${instanceId}] Falha ao recarregar diálogos: ${dialogErr.message}`);
   }
+  return null;
+}
+
+/**
+ * Normaliza e formata o número de telefone no formato internacional (+...).
+ * Retorna string vazia caso não haja número disponível.
+ */
+export function formatPhoneNumber(rawPhone?: string | null): string {
+  if (!rawPhone) return '';
+  const cleaned = rawPhone.toString().trim().replace(/[^\d+]/g, '');
+  if (!cleaned) return '';
+  return cleaned.startsWith('+') ? cleaned : `+${cleaned}`;
+}
+
+/**
+ * Extrai o número de telefone do usuário a partir dos dados do evento MTProto (GramJS).
+ * Se o usuário tiver o número visível nas configurações de privacidade do Telegram,
+ * ele é retornado devidamente formatado. Caso esteja oculto, retorna string vazia "".
+ */
+export async function extractPhoneFromEvent(
+  event: any,
+  senderEntity?: any,
+  client?: TelegramClient
+): Promise<string> {
+  try {
+    // 1. Telefone direto da entidade de remetente já resolvida
+    if (senderEntity?.phone) {
+      return formatPhoneNumber(senderEntity.phone);
+    }
+
+    // 2. Se a mensagem contém uma mídia de contato compartilhado (MessageMediaContact)
+    const media = event?.message?.media;
+    if (media?.phoneNumber) {
+      return formatPhoneNumber(media.phoneNumber);
+    }
+
+    // 3. Tentar obter sender via event.getSender()
+    if (typeof event?.getSender === 'function') {
+      try {
+        const sender = await event.getSender();
+        if (sender?.phone) {
+          return formatPhoneNumber(sender.phone);
+        }
+      } catch (e) {
+        // Ignora erro
+      }
+    }
+
+    // 4. Se a mensagem for sainte (isOutgoing = true) em conversa privada,
+    // tentar buscar o telefone do destinatário (chatId / peerId)
+    const message = event?.message;
+    if (message?.out && client && message?.peerId) {
+      try {
+        const peer: any = await client.getEntity(message.peerId);
+        if (peer?.phone) {
+          return formatPhoneNumber(peer.phone);
+        }
+      } catch (e) {
+        // Ignora erro
+      }
+    }
+
+    // 5. Tentar obter via client.getEntity usando senderId
+    if (client && message?.senderId) {
+      try {
+        const entity: any = await client.getEntity(message.senderId);
+        if (entity?.phone) {
+          return formatPhoneNumber(entity.phone);
+        }
+      } catch (e) {
+        // Ignora erro
+      }
+    }
+
+    // 6. Tentar obter via client.getEntity usando chatId se for peer de usuário
+    if (client && message?.chatId) {
+      try {
+        const entity: any = await client.getEntity(message.chatId);
+        if (entity?.phone) {
+          return formatPhoneNumber(entity.phone);
+        }
+      } catch (e) {
+        // Ignora erro
+      }
+    }
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} Erro ao tentar extrair telefone do evento:`, err);
+  }
+
+  return '';
 }
 
 export async function handleNewMessage(instanceId: string, event: NewMessageEvent, client?: TelegramClient) {
@@ -84,10 +179,13 @@ export async function handleNewMessage(instanceId: string, event: NewMessageEven
   let type = 'text';
   let mediaUrl = undefined;
 
-  // Pre-warm entity cache com o remetente dessa mensagem
+  // Pre-warm entity cache com o remetente dessa mensagem e obtém entidade resolvida
+  let senderEntity: any = null;
   if (client) {
-    await warmEntityFromEvent(client, event, instanceId);
+    senderEntity = await warmEntityFromEvent(client, event, instanceId);
   }
+
+  const phone = await extractPhoneFromEvent(event, senderEntity, client);
 
   if (message.media) {
     const ttl = (message.media as any).ttlSeconds;
@@ -122,6 +220,7 @@ export async function handleNewMessage(instanceId: string, event: NewMessageEven
     type,
     content: message.message || '',
     senderId: message.senderId?.toString(),
+    phone,
     chatId: message.chatId?.toString(),
     date: message.date,
     isOutgoing: message.out,
@@ -134,9 +233,12 @@ export async function handleEditedMessage(instanceId: string, event: EditedMessa
   let type = 'text';
   let mediaUrl = undefined;
 
+  let senderEntity: any = null;
   if (client) {
-    await warmEntityFromEvent(client, event, instanceId);
+    senderEntity = await warmEntityFromEvent(client, event, instanceId);
   }
+
+  const phone = await extractPhoneFromEvent(event, senderEntity, client);
 
   if (message.media) {
     const ttl = (message.media as any).ttlSeconds;
@@ -171,6 +273,7 @@ export async function handleEditedMessage(instanceId: string, event: EditedMessa
     type,
     content: message.message || '',
     senderId: message.senderId?.toString(),
+    phone,
     chatId: message.chatId?.toString(),
     date: message.date,
     isOutgoing: message.out,
@@ -178,7 +281,7 @@ export async function handleEditedMessage(instanceId: string, event: EditedMessa
   });
 }
 
-export async function handleRawEvent(instanceId: string, event: Api.TypeUpdate) {
+export async function handleRawEvent(instanceId: string, event: Api.TypeUpdate, client?: TelegramClient) {
   // ── Atualizações de Chamadas e Vídeo Ligações (MTProto) ───────────────────
   if (event.className === 'UpdatePhoneCall') {
     await callManager.handleCallUpdate(instanceId, (event as any).phoneCall);
@@ -191,24 +294,39 @@ export async function handleRawEvent(instanceId: string, event: Api.TypeUpdate) 
     const userId = (event as any).userId?.toString();
     const chatId = (event as any).chatId?.toString() || userId;
 
-    // Dispara o evento legado/genérico
-    await dispatchWebhook(instanceId, 'typing', {
+    let phone = '';
+    if (client && userId) {
+      try {
+        const user: any = await client.getEntity(userId);
+        if (user?.phone) {
+          phone = formatPhoneNumber(user.phone);
+        }
+      } catch (e) {
+        // Ignora erro
+      }
+    }
+
+    const actionData = {
       userId,
+      phone,
       chatId,
       action: actionName,
-    });
+    };
+
+    // Dispara o evento legado/genérico
+    await dispatchWebhook(instanceId, 'typing', actionData);
 
     // Dispara eventos granulares categorizados
     if (actionName === 'SendMessageTypingAction') {
-      await dispatchWebhook(instanceId, 'chat.typing', { userId, chatId, action: actionName });
+      await dispatchWebhook(instanceId, 'chat.typing', actionData);
     } else if (actionName === 'SendMessageRecordAudioAction' || actionName === 'SendMessageUploadAudioAction') {
-      await dispatchWebhook(instanceId, 'chat.recording_audio', { userId, chatId, action: actionName });
+      await dispatchWebhook(instanceId, 'chat.recording_audio', actionData);
     } else if (actionName === 'SendMessageUploadPhotoAction') {
-      await dispatchWebhook(instanceId, 'chat.uploading_photo', { userId, chatId, action: actionName });
+      await dispatchWebhook(instanceId, 'chat.uploading_photo', actionData);
     } else if (actionName === 'SendMessageUploadVideoAction' || actionName === 'SendMessageRecordVideoAction') {
-      await dispatchWebhook(instanceId, 'chat.uploading_video', { userId, chatId, action: actionName });
+      await dispatchWebhook(instanceId, 'chat.uploading_video', actionData);
     } else if (actionName === 'SendMessageUploadDocumentAction') {
-      await dispatchWebhook(instanceId, 'chat.uploading_document', { userId, chatId, action: actionName });
+      await dispatchWebhook(instanceId, 'chat.uploading_document', actionData);
     }
     return;
   }
@@ -217,7 +335,8 @@ export async function handleRawEvent(instanceId: string, event: Api.TypeUpdate) 
   if (event.className === 'UpdateDeleteMessages' || event.className === 'UpdateDeleteChannelMessages') {
     await dispatchWebhook(instanceId, 'deleted_message', {
       messages: (event as any).messages,
-      channelId: (event as any).channelId?.toString()
+      channelId: (event as any).channelId?.toString(),
+      phone: ''
     });
     return;
   }

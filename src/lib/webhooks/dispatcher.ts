@@ -17,6 +17,11 @@ export async function dispatchWebhook(instanceId: string, eventName: string, pay
 
     const endpoint = process.env.PUBLIC_URL || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
 
+    // Normalização defensiva: garante que o campo 'phone' esteja sempre presente no objeto 'data'
+    const normalizedData = (typeof payload === 'object' && payload !== null)
+      ? { ...payload, phone: payload.phone !== undefined ? payload.phone : '' }
+      : payload;
+
     for (const webhook of webhooks) {
       let events: string[] = [];
       try {
@@ -36,7 +41,7 @@ export async function dispatchWebhook(instanceId: string, eventName: string, pay
           instanceId,
           instanceName: instanceObj?.name || '',
           language: (instanceObj as any)?.language || 'pt-BR',
-          data: payload,
+          data: normalizedData,
           connection: {
             endpoint: endpoint,
             token: instanceObj?.token || ''
@@ -59,7 +64,7 @@ export async function dispatchWebhook(instanceId: string, eventName: string, pay
             webhookId: webhook.id,
             event: eventName,
             targetUrl: webhook.url,
-            requestPayload: { event: eventName, instanceId, data: payload },
+            requestPayload: { event: eventName, instanceId, data: normalizedData },
             responseStatus: response.status,
             responseBody: responseBody,
             success: response.ok
@@ -71,7 +76,7 @@ export async function dispatchWebhook(instanceId: string, eventName: string, pay
             webhookId: webhook.id,
             event: eventName,
             targetUrl: webhook.url,
-            requestPayload: { event: eventName, instanceId, data: payload },
+            requestPayload: { event: eventName, instanceId, data: normalizedData },
             responseStatus: 500,
             responseBody: { error: err.message },
             success: false

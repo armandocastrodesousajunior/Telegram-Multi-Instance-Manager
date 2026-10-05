@@ -78,11 +78,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
       const msg = body.message;
       const type = getMediaType(msg);
       
+      const phone = msg.contact?.phone_number
+        ? (msg.contact.phone_number.startsWith('+') ? msg.contact.phone_number : `+${msg.contact.phone_number}`)
+        : '';
+      
       const payload = {
         id: msg.message_id,
         type,
         content: msg.text || msg.caption || '',
         senderId: msg.from?.id?.toString(),
+        phone,
         chatId: msg.chat?.id?.toString(),
         date: msg.date,
         isOutgoing: msg.from?.id.toString() === instance.botToken?.split(':')[0],
@@ -101,12 +106,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     if (body.edited_message && instance.botType !== 'BUSINESS') {
       const msg = body.edited_message;
       const type = getMediaType(msg);
+      const phone = msg.contact?.phone_number
+        ? (msg.contact.phone_number.startsWith('+') ? msg.contact.phone_number : `+${msg.contact.phone_number}`)
+        : '';
       
       const payload = {
         id: msg.message_id,
         type,
         content: msg.text || msg.caption || '',
         senderId: msg.from?.id?.toString(),
+        phone,
         chatId: msg.chat?.id?.toString(),
         date: msg.date,
         isOutgoing: msg.from?.id.toString() === instance.botToken?.split(':')[0],
@@ -138,12 +147,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     if (body.business_message && instance.botType === 'BUSINESS') {
       const msg = body.business_message;
       const type = getMediaType(msg);
+      const phone = msg.contact?.phone_number
+        ? (msg.contact.phone_number.startsWith('+') ? msg.contact.phone_number : `+${msg.contact.phone_number}`)
+        : '';
       
       const payload = {
         id: msg.message_id,
         type,
         content: msg.text || msg.caption || '',
         senderId: msg.from?.id?.toString(),
+        phone,
         chatId: msg.chat?.id?.toString(),
         date: msg.date,
         isOutgoing: msg.from?.id.toString() === instance.botToken?.split(':')[0],
@@ -162,12 +175,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     if (body.edited_business_message && instance.botType === 'BUSINESS') {
       const msg = body.edited_business_message;
       const type = getMediaType(msg);
+      const phone = msg.contact?.phone_number
+        ? (msg.contact.phone_number.startsWith('+') ? msg.contact.phone_number : `+${msg.contact.phone_number}`)
+        : '';
       
       const payload = {
         id: msg.message_id,
         type,
         content: msg.text || msg.caption || '',
         senderId: msg.from?.id?.toString(),
+        phone,
         chatId: msg.chat?.id?.toString(),
         date: msg.date,
         isOutgoing: msg.from?.id.toString() === instance.botToken?.split(':')[0],
