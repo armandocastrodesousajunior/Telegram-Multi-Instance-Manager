@@ -3,8 +3,7 @@ import { checkAuth, unauthorizedResponse } from '@/lib/auth';
 import { ProviderFactory } from '@/lib/telegram/providers/ProviderFactory';
 import { logApiRequest } from '@/lib/logger';
 import { prisma } from '@/lib/db';
-import { getCachedInstance, getCachedInstanceSettings } from '@/lib/telegram/utils';
-import { getOrFetchEntity } from '@/lib/telegram/utils';
+import { getCachedInstance, getCachedInstanceSettings, getOrFetchEntity, normalizeNewlines } from '@/lib/telegram/utils';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ instanceId: string }> }) {
   let authInstanceId = undefined;
@@ -21,13 +20,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     const timingBreakdown: any = {};
     const { instanceId } = await params;
     const body = await req.json();
-    const { chatId, text, replyToMsgId, parseMode } = body;
+    const { chatId, replyToMsgId, parseMode } = body;
+    const rawText = body.text;
 
-    if (!chatId || !text) {
+    if (!chatId || !rawText) {
       const err = { error: 'chatId and text are required' };
       await logApiRequest({ instanceId, endpoint: '/send/text', method: 'POST', requestBody: body, responseStatus: 400, responseBody: err, success: false });
       return NextResponse.json(err, { status: 400 });
     }
+
+    // Normaliza quebras de linha (literais \n, \r\n de IA e CRLF) para quebras de linha reais (\n)
+    const text = normalizeNewlines(rawText);
 
     timingBreakdown.authMs = Date.now() - requestStartTime;
 
@@ -47,8 +50,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     const splitEnabled = settings ? settings.splitMessagesEnabled : true;
     let resData: any;
 
-    if (splitEnabled && text.includes('\n\n')) {
-      const parts = text.split('\n\n').filter((p: string) => p.trim() !== '');
+    if (splitEnabled && /\n{2,}/.test(text)) {
+      const parts = text.split(/\n{2,}/).map((p: string) => p.trim()).filter((p: string) => p !== '');
       const messageIds: number[] = [];
       const actions: any[] = [];
       

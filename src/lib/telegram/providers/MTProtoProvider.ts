@@ -2,7 +2,7 @@ import { Instance } from '@prisma/client';
 import { ITelegramProvider, MediaOptions, MessageOptions, ViewOnceOptions } from './IProvider';
 import { telegramManager } from '../client';
 import { simulateTyping, simulateFileAction, normalizeActionName, getTelegramActionClass } from '../actions';
-import { getOrFetchEntity } from '../utils';
+import { getOrFetchEntity, normalizeNewlines } from '../utils';
 import { sendViewOnceFile } from '../viewOnce';
 import { getWorkerPool } from '../../workers/WorkerPool';
 import { Api } from 'telegram';
@@ -22,7 +22,7 @@ export class MTProtoProvider implements ITelegramProvider {
     const client = await telegramManager.getClient(this.instance.id);
     const { entity: peer } = await getOrFetchEntity(client, chatId);
     const msg = await client.sendMessage(peer, {
-      message: text,
+      message: normalizeNewlines(text),
       replyTo: options?.replyToMsgId,
       parseMode: options?.parseMode
     });
@@ -34,7 +34,7 @@ export class MTProtoProvider implements ITelegramProvider {
     const { entity: peer } = await getOrFetchEntity(client, chatId);
     const msg = await client.sendFile(peer, {
       file: file,
-      caption: options?.caption || '',
+      caption: options?.caption ? normalizeNewlines(options.caption) : '',
       forceDocument: options?.forceDocument,
       voiceNote: options?.voiceNote,
       videoNote: false,
@@ -50,7 +50,7 @@ export class MTProtoProvider implements ITelegramProvider {
     const msg = await sendViewOnceFile(client, peer, {
       tempPath,
       mediaType,
-      caption: options?.caption || '',
+      caption: options?.caption ? normalizeNewlines(options.caption) : '',
       replyToMsgId: options?.replyToMsgId,
       ttlSeconds: options?.ttlSeconds || 2147483647,
       parseMode: options?.parseMode

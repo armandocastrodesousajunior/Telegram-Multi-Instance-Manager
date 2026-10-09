@@ -155,3 +155,25 @@ export async function getOrFetchEntity(client: TelegramClient, chatId: string | 
   }
 }
 
+/**
+ * Normaliza quebras de linha em textos, tratando casos onde IAs (como DeepSeek, OpenAI, Claude)
+ * ou integrações (n8n, Typebot, webhooks) enviam o escape literal de quebra de linha (\n, \r\n)
+ * em vez do caractere real de quebra de linha.
+ * 
+ * Também converte quebras em formato Windows (CRLF), CR isolado e tags HTML comuns (<br>, <br/>)
+ * para o caractere real \n (LF), garantindo renderização correta no Telegram e split perfeito de mensagens.
+ */
+export function normalizeNewlines(text?: string | null): string {
+  if (!text || typeof text !== 'string') return '';
+  return text
+    // 1. Converte quebras literais escapadas geradas por serialização de IA / JSON
+    .replace(/\\r\\n/g, '\n')
+    .replace(/\\n/g, '\n')
+    .replace(/\\r/g, '\n')
+    // 2. Converte tags HTML de quebra de linha (<br>, <br/>, <br />) caso a IA gere
+    .replace(/<br\s*\/?>/gi, '\n')
+    // 3. Converte quebras reais CRLF / CR para LF padrão
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n');
+}
+

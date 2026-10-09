@@ -10,7 +10,7 @@ import path from 'path';
 import os from 'os';
 import crypto from 'crypto';
 import { getCachedMedia, saveMediaToCache } from '@/lib/telegram/mediaCache';
-import { getOrFetchEntity, getCachedInstance, getCachedInstanceSettings } from '@/lib/telegram/utils';
+import { getOrFetchEntity, getCachedInstance, getCachedInstanceSettings, normalizeNewlines } from '@/lib/telegram/utils';
 import { sendViewOnceFile } from '@/lib/telegram/viewOnce';
 import { generateAudio } from '@/lib/elevenlabs/client';
 
@@ -42,13 +42,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     const stageTimings: any = { stage1PrefetchMs: 0, stage2ExecutionMs: 0, actions: [] };
     const { instanceId } = await params;
     const body = await req.json();
-    const { chatId, content, replyToMsgId, parseMode } = body;
+    const { chatId, replyToMsgId, parseMode } = body;
+    const rawContent = body.content;
 
-    if (!chatId || !content) {
+    if (!chatId || !rawContent) {
       const err = { error: 'chatId and content are required' };
       await logApiRequest({ instanceId, endpoint: '/send/smart', method: 'POST', requestBody: body, responseStatus: 400, responseBody: err, success: false });
       return NextResponse.json(err, { status: 400 });
     }
+
+    // Normaliza quebras de linha (literais \n, \r\n de IA e CRLF) para quebras de linha reais (\n)
+    const content = normalizeNewlines(rawContent);
 
     timingBreakdown.authMs = Date.now() - requestStartTime;
 
@@ -81,7 +85,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
       
       const tag = match[1].toLowerCase();
       const attributesString = match[2];
-      const caption = match[3] || '';
+      const caption = match[3] ? normalizeNewlines(match[3]) : '';
       
       const urlMatch = attributesString.match(/url=["']([^"']+)["']/i);
       const filenameMatch = attributesString.match(/filename=["']([^"']+)["']/i);
@@ -105,9 +109,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     const actions: SmartAction[] = [];
     for (const item of items) {
       if (item.type === 'text') {
-        const t = item.text!.trim();
-        if (splitEnabled && t.includes('\n\n')) {
-          const parts = t.split('\n\n').filter(p => p.trim() !== '');
+        const t = normalizeNewlines(item.text).trim();
+        // Se splitEnabled estiver ativado e houver 2 ou mais quebras de linha seguidas (\n\n)
+        if (splitEnabled && /\n{2,}/.test(t)) {
+          const parts = t.split(/\n{2,}/).map(p => p.trim()).filter(p => p !== '');
           for (const p of parts) {
             actions.push({ type: 'text', text: p });
           }
@@ -115,6 +120,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
           actions.push({ type: 'text', text: t });
         }
       } else {
+        if (item.caption) {
+          item.caption = normalizeNewlines(item.caption).trim();
+        }
         actions.push(item);
       }
     }

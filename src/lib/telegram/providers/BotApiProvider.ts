@@ -2,7 +2,7 @@ import { Instance } from '@prisma/client';
 import { ITelegramProvider, MediaOptions, MessageOptions, ViewOnceOptions } from './IProvider';
 import { SimulationResult, normalizeActionName, getBotApiAction } from '../actions';
 import { prisma } from '../../db';
-import { getCachedInstanceSettings } from '../utils';
+import { getCachedInstanceSettings, normalizeNewlines } from '../utils';
 import fs from 'fs';
 import path from 'path';
 
@@ -67,7 +67,7 @@ export class BotApiProvider implements ITelegramProvider {
   async sendMessage(chatId: string | number, text: string, options?: MessageOptions) {
     const payload: any = {
       chat_id: chatId,
-      text: text,
+      text: normalizeNewlines(text),
       reply_parameters: options?.replyToMsgId ? { message_id: options.replyToMsgId } : undefined,
       parse_mode: options?.parseMode === 'html' ? 'HTML' : undefined
     };
@@ -100,7 +100,7 @@ export class BotApiProvider implements ITelegramProvider {
 
     const payload: any = {
       chat_id: chatId,
-      caption: options?.caption || '',
+      caption: options?.caption ? normalizeNewlines(options.caption) : '',
       reply_parameters: options?.replyToMsgId ? { message_id: options.replyToMsgId } : undefined,
       parse_mode: options?.parseMode === 'html' ? 'HTML' : undefined
     };
