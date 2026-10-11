@@ -14,10 +14,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
   } catch (e) {}
   if (!(await checkAuth(req, authInstanceId))) return unauthorizedResponse();
 
+  let requestBody: any = null;
   try {
     const requestStartTime = Date.now();
     const { instanceId } = await params;
     const body = await req.json();
+    requestBody = body;
     const { chatId, action = 'typing' } = body;
 
     if (!chatId) {
@@ -49,8 +51,38 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     await logApiRequest({ instanceId, endpoint: '/send/action', method: 'POST', requestBody: body, responseStatus: 200, responseBody: resData, success: true });
     return NextResponse.json(resData);
   } catch (err: any) {
-    const errBody = { error: err.message };
-    await logApiRequest({ instanceId: (await params).instanceId, endpoint: '/send/action', method: 'POST', requestBody: null, responseStatus: 500, responseBody: errBody, success: false });
-    return NextResponse.json(errBody, { status: 500 });
+    const errMsg = String(err?.message || err || '');
+    const isForbidden = errMsg.includes('CHAT_WRITE_FORBIDDEN') || errMsg.includes('USER_IS_BLOCKED') || errMsg.includes('YOU_BLOCKED_USER');
+    const isFlood = errMsg.includes('FLOOD_WAIT') || errMsg.includes('PEER_FLOOD');
+    const isBadRequest = errMsg.includes('CHAT_ID_INVALID') || errMsg.includes('PEER_ID_INVALID');
+    const status = isForbidden ? 403 : isFlood ? 429 : isBadRequest ? 400 : 500;
+
+    let explanation: string | undefined = undefined;
+    if (isForbidden) {
+      explanation = 'Não foi possível enviar a ação: o destinatário bloqueou a conta, possui configurações restritas de privacidade (Telegram Premium) ou este chat não permite envio de mensagens.';
+    } else if (isFlood) {
+      explanation = 'Limite de requisições temporário do Telegram atingido (Flood). Aguarde alguns instantes.';
+    }
+
+    const errBody: any = { 
+      error: errMsg,
+      ...(explanation ? { details: explanation } : {})
+    };
+
+    let instanceIdToLog = authInstanceId;
+    try {
+      instanceIdToLog = (await params).instanceId;
+    } catch(e) {}
+
+    await logApiRequest({ 
+      instanceId: instanceIdToLog || '', 
+      endpoint: '/send/action', 
+      method: 'POST', 
+      requestBody: requestBody, 
+      responseStatus: status, 
+      responseBody: errBody, 
+      success: false 
+    });
+    return NextResponse.json(errBody, { status });
   }
 }
