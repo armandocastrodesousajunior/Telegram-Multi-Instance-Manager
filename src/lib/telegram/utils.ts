@@ -3,9 +3,11 @@ import { prisma } from '../db';
 
 const LOG_PREFIX = '[TG-EntityResolver]';
 
-// ── Cache em Memória RAM para InstanceSettings e Instance (TTL: 30s) ────────
+// ── Cache em Memória RAM para InstanceSettings e Instance (TTL: 60s) ────────
 const settingsCache = new Map<string, { data: any; expiresAt: number }>();
 const instanceCache = new Map<string, { data: any; expiresAt: number }>();
+const inFlightSettings = new Map<string, Promise<any>>();
+const inFlightInstances = new Map<string, Promise<any>>();
 
 function getCacheTtl(): number {
   return parseInt(process.env.INSTANCE_CACHE_TTL_MS || '60000', 10);
@@ -17,11 +19,25 @@ export async function getCachedInstanceSettings(instanceId: string): Promise<any
   if (cached && cached.expiresAt > now) {
     return cached.data;
   }
-  const settings = await prisma.instanceSettings.findUnique({ where: { instanceId } });
-  if (settings) {
-    settingsCache.set(instanceId, { data: settings, expiresAt: now + getCacheTtl() });
+
+  // Se já houver uma consulta em andamento para essa instância, reutiliza a mesma Promise (evita Cache Stampede)
+  if (inFlightSettings.has(instanceId)) {
+    return inFlightSettings.get(instanceId);
   }
-  return settings;
+
+  const fetchPromise = (async () => {
+    try {
+      const settings = await prisma.instanceSettings.findUnique({ where: { instanceId } });
+      // Cacheia mesmo se for null para evitar consultas repetidas contínuas
+      settingsCache.set(instanceId, { data: settings, expiresAt: Date.now() + getCacheTtl() });
+      return settings;
+    } finally {
+      inFlightSettings.delete(instanceId);
+    }
+  })();
+
+  inFlightSettings.set(instanceId, fetchPromise);
+  return fetchPromise;
 }
 
 export async function getCachedInstance(instanceId: string): Promise<any> {
@@ -30,16 +46,32 @@ export async function getCachedInstance(instanceId: string): Promise<any> {
   if (cached && cached.expiresAt > now) {
     return cached.data;
   }
-  const instance = await prisma.instance.findUnique({ where: { id: instanceId } });
-  if (instance) {
-    instanceCache.set(instanceId, { data: instance, expiresAt: now + getCacheTtl() });
+
+  // Se já houver uma consulta em andamento para essa instância, reutiliza a mesma Promise (evita Cache Stampede)
+  if (inFlightInstances.has(instanceId)) {
+    return inFlightInstances.get(instanceId);
   }
-  return instance;
+
+  const fetchPromise = (async () => {
+    try {
+      const instance = await prisma.instance.findUnique({ where: { id: instanceId } });
+      // Cacheia mesmo se for null
+      instanceCache.set(instanceId, { data: instance, expiresAt: Date.now() + getCacheTtl() });
+      return instance;
+    } finally {
+      inFlightInstances.delete(instanceId);
+    }
+  })();
+
+  inFlightInstances.set(instanceId, fetchPromise);
+  return fetchPromise;
 }
 
 export function invalidateInstanceSettingsCache(instanceId: string) {
   settingsCache.delete(instanceId);
   instanceCache.delete(instanceId);
+  inFlightSettings.delete(instanceId);
+  inFlightInstances.delete(instanceId);
 }
 
 // ── Cache em Memória RAM (Camada 0) para Entidades / Peers (TTL: 1h) ────────

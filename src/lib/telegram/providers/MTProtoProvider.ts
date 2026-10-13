@@ -32,16 +32,47 @@ export class MTProtoProvider implements ITelegramProvider {
   async sendFile(chatId: string | number, file: string | Buffer | any, options?: MediaOptions) {
     const client = await telegramManager.getClient(this.instance.id);
     const { entity: peer } = await getOrFetchEntity(client, chatId);
-    const msg = await client.sendFile(peer, {
-      file: file,
-      caption: options?.caption ? normalizeNewlines(options.caption) : '',
-      forceDocument: options?.forceDocument,
-      voiceNote: options?.voiceNote,
-      videoNote: false,
-      replyTo: options?.replyToMsgId,
-      parseMode: options?.parseMode
-    });
-    return { id: msg.id, nativeMessage: msg };
+    try {
+      const msg = await client.sendFile(peer, {
+        file: file,
+        caption: options?.caption ? normalizeNewlines(options.caption) : '',
+        forceDocument: options?.forceDocument,
+        voiceNote: options?.voiceNote,
+        videoNote: false,
+        replyTo: options?.replyToMsgId,
+        parseMode: options?.parseMode
+      });
+      return { id: msg.id, nativeMessage: msg };
+    } catch (err: any) {
+      // Se o Telegram falhar no cURL remoto de uma URL (WEBPAGE_CURL_FAILED):
+      if (typeof file === 'string' && /^https?:\/\//i.test(file) && String(err?.message || '').includes('WEBPAGE_CURL_FAILED')) {
+        console.warn(`[MTProtoProvider] WEBPAGE_CURL_FAILED detectado para ${file}. Baixando arquivo no servidor e reenviando via buffer upload...`);
+        try {
+          const res = await fetch(file, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+          });
+          if (res.ok) {
+            const buffer = Buffer.from(await res.arrayBuffer());
+            const msg = await client.sendFile(peer, {
+              file: buffer,
+              caption: options?.caption ? normalizeNewlines(options.caption) : '',
+              forceDocument: options?.forceDocument,
+              voiceNote: options?.voiceNote,
+              videoNote: false,
+              replyTo: options?.replyToMsgId,
+              parseMode: options?.parseMode
+            });
+            console.log(`[MTProtoProvider] Envio via buffer concluído com sucesso após WEBPAGE_CURL_FAILED!`);
+            return { id: msg.id, nativeMessage: msg };
+          }
+        } catch (downloadErr) {
+          console.error(`[MTProtoProvider] Falha ao baixar mídia no fallback de WEBPAGE_CURL_FAILED:`, downloadErr);
+        }
+      }
+      throw err;
+    }
   }
 
   async sendViewOnceFile(chatId: string | number, tempPath: string, mediaType: 'photo' | 'video', options?: ViewOnceOptions) {

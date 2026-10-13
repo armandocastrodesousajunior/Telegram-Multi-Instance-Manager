@@ -187,19 +187,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
           } catch (e) {
             console.error(`[SmartRoute] Falha ao gerar Voice AI:`, e);
           }
-        } else if (isVideo && settings?.downloadVideoFirst) {
+        } else if (action.url && (action.url.startsWith('http://') || action.url.startsWith('https://'))) {
+          // Pre-fetch universal para qualquer mídia remota (fotos, vídeos, áudios, documentos)
+          // Isso faz o download pelo próprio servidor TMIM e envia via upload MTProto direto,
+          // evitando que os datacenters do Telegram façam cURL na Cloudflare/R2 e sofram WEBPAGE_CURL_FAILED.
           try {
-            console.log(`[SmartRoute] Pre-fetching mídia: ${action.url!}`);
-            const res = await fetch(action.url!);
+            console.log(`[SmartRoute] Pre-fetching mídia remota (${action.type}): ${action.url!}`);
+            const res = await fetch(action.url!, {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+              }
+            });
             if (res.ok) {
               const arrayBuffer = await res.arrayBuffer();
               const buffer = Buffer.from(arrayBuffer);
               
               let realDurationMs = 0;
-              try {
-                const metadata = await mm.parseBuffer(buffer, res.headers.get('content-type') || undefined);
-                if (metadata.format.duration) realDurationMs = Math.round(metadata.format.duration * 1000);
-              } catch (e) {}
+              if (isVideo || action.type.includes('audio') || action.type.includes('voice')) {
+                try {
+                  const metadata = await mm.parseBuffer(buffer, res.headers.get('content-type') || undefined);
+                  if (metadata.format.duration) realDurationMs = Math.round(metadata.format.duration * 1000);
+                } catch (e) {}
+              }
 
               let ext = 'bin';
               try {
@@ -214,9 +223,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
               
               action.prefetchedPath = tempPath;
               action.prefetchedDuration = realDurationMs;
-              console.log(`[SmartRoute] Pre-fetch concluído: ${tempPath} (${realDurationMs}ms)`);
+              console.log(`[SmartRoute] Pre-fetch concluído com sucesso: ${tempPath} (${realDurationMs}ms, ${buffer.length} bytes)`);
             } else {
-              console.error(`[SmartRoute] Falha no pre-fetch de ${action.url!}: ${res.status}`);
+              console.error(`[SmartRoute] Falha no pre-fetch de ${action.url!}: HTTP ${res.status}`);
             }
           } catch (e) {
             console.error(`[SmartRoute] Exceção no pre-fetch de ${action.url!}:`, e);
