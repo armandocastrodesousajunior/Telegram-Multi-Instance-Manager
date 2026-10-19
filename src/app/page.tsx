@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { InstanceCard, Instance } from "@/components/InstanceCard";
 import { apiClient } from "@/lib/api-client";
-import { Plus, BookOpen } from "lucide-react";
+import { Plus, BookOpen, Activity } from "lucide-react";
 import Link from "next/link";
 import { CreateInstanceModal } from "@/components/CreateInstanceModal";
 import { EditInstanceModal } from "@/components/EditInstanceModal";
@@ -74,10 +74,14 @@ export default function Dashboard() {
             <h1 className="page-title">Instances</h1>
             <p style={{ color: "var(--text-secondary)", marginTop: "8px" }}>Manage your Telegram client instances.</p>
           </div>
-          <div style={{ display: "flex", gap: "12px" }}>
+          <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
             <Link href="/docs" className="btn-secondary">
               <BookOpen size={20} />
               API Docs
+            </Link>
+            <Link href="/logs" className="btn-secondary">
+              <Activity size={20} />
+              Logs
             </Link>
             <button className="btn-primary" onClick={() => setShowCreate(true)}>
               <Plus size={20} />

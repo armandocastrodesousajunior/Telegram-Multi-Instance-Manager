@@ -61,6 +61,7 @@ async function dispatchSingleWebhookWithRetry(
 
       // Sucesso (HTTP 2xx)
       if (response.ok) {
+        const isRecoveredRetry = attempt > 1;
         await logWebhookEvent({
           instanceId,
           webhookId: webhook.id,
@@ -68,7 +69,12 @@ async function dispatchSingleWebhookWithRetry(
           targetUrl: webhook.url,
           requestPayload: { event: eventName, instanceId, data: normalizedData },
           responseStatus: response.status,
-          responseBody: lastResponseBody,
+          responseBody: isRecoveredRetry ? {
+            ...(typeof lastResponseBody === 'object' && lastResponseBody !== null ? lastResponseBody : { data: lastResponseBody }),
+            alertType: 'RETRY_RECOVERED',
+            message: `Entregue com sucesso após retentativa (tentativa ${attempt}/${maxRetries})`,
+            attempt
+          } : lastResponseBody,
           success: true
         });
         return;
@@ -94,6 +100,26 @@ async function dispatchSingleWebhookWithRetry(
     if (attempt < maxRetries) {
       const delayMs = baseDelayMs * Math.pow(2, attempt - 1); // 2s, 4s, 8s...
       console.warn(`[WebhookDispatcher] ⚠️ Falha ao despachar webhook para ${webhook.url} (tentativa ${attempt}/${maxRetries}): ${lastError?.message}. Retentando em ${delayMs}ms...`);
+
+      // Registra log de alerta (tentativa de retry)
+      await logWebhookEvent({
+        instanceId,
+        webhookId: webhook.id,
+        event: eventName,
+        targetUrl: webhook.url,
+        requestPayload: { event: eventName, instanceId, data: normalizedData },
+        responseStatus: lastStatus || 0,
+        responseBody: {
+          alertType: 'RETRY_ATTEMPT',
+          attempt,
+          maxRetries,
+          delayMs,
+          message: `Falha na tentativa ${attempt}/${maxRetries}: ${lastError?.message || 'Erro de rede/timeout'}. Retentando em ${delayMs}ms...`,
+          details: lastResponseBody
+        },
+        success: false
+      }).catch(() => {});
+
       await new Promise(resolve => setTimeout(resolve, delayMs));
     }
   }
@@ -107,7 +133,12 @@ async function dispatchSingleWebhookWithRetry(
     targetUrl: webhook.url,
     requestPayload: { event: eventName, instanceId, data: normalizedData },
     responseStatus: lastStatus || 500,
-    responseBody: lastResponseBody || { error: lastError?.message || 'Falha no envio de webhook após múltiplas tentativas' },
+    responseBody: {
+      alertType: 'FATAL_ERROR',
+      error: lastError?.message || 'Falha no envio de webhook após múltiplas tentativas',
+      attempts: maxRetries,
+      details: lastResponseBody
+    },
     success: false
   });
 }
