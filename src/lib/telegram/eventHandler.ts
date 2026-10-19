@@ -64,10 +64,13 @@ async function warmEntityFromEvent(client: TelegramClient, event: any, instanceI
     }
   }
 
-  // ── Passo 3: recarregar diálogos (contingência final) ────────────────────
+  // ── Passo 3: recarregar diálogos (contingência final com timeout) ────────
   console.log(`${LOG_PREFIX} [${instanceId}] Tentativa 3 (contingência): recarregando 200 diálogos...`);
   try {
-    const dialogs = await client.getDialogs({ limit: 200 });
+    const dialogs = await Promise.race([
+      client.getDialogs({ limit: 200 }),
+      new Promise<any[]>((_, reject) => setTimeout(() => reject(new Error('Timeout ao buscar diálogos (3s)')), 3000))
+    ]);
     console.log(`${LOG_PREFIX} [${instanceId}] getDialogs() retornou ${dialogs.length} diálogos. Verificando se chatId ${chatIdStr} está agora no cache...`);
     try {
       if (message?.peerId) {
@@ -80,7 +83,7 @@ async function warmEntityFromEvent(client: TelegramClient, event: any, instanceI
       console.warn(`${LOG_PREFIX} [${instanceId}] ⚠️ Isso indica que o lead ${senderIdStr} não apareceu nos últimos 200 diálogos.`);
     }
   } catch (dialogErr: any) {
-    console.error(`${LOG_PREFIX} [${instanceId}] Falha ao recarregar diálogos: ${dialogErr.message}`);
+    console.warn(`${LOG_PREFIX} [${instanceId}] Falha ou timeout ao recarregar diálogos: ${dialogErr.message}`);
   }
   return null;
 }
@@ -175,169 +178,211 @@ export async function extractPhoneFromEvent(
 }
 
 export async function handleNewMessage(instanceId: string, event: NewMessageEvent, client?: TelegramClient) {
-  const message = event.message;
-  let type = 'text';
-  let mediaUrl = undefined;
+  try {
+    const message = event.message;
+    if (!message) return;
 
-  // Pre-warm entity cache com o remetente dessa mensagem e obtém entidade resolvida
-  let senderEntity: any = null;
-  if (client) {
-    senderEntity = await warmEntityFromEvent(client, event, instanceId);
-  }
+    let type = 'text';
+    let mediaUrl = undefined;
 
-  const phone = await extractPhoneFromEvent(event, senderEntity, client);
-
-  if (message.media) {
-    const ttl = (message.media as any).ttlSeconds;
-    const isViewOnce = ttl && ttl > 0;
-
-    if (message.photo) {
-      type = isViewOnce ? 'view_once_image' : 'image';
-    } else if (message.video) {
-      type = isViewOnce ? 'view_once_video' : 'video';
-    } else if (message.audio) {
-      type = isViewOnce ? 'view_once_audio' : 'audio';
-    } else if (message.voice) {
-      type = isViewOnce ? 'view_once_voice' : 'voice';
-    } else if (message.gif) {
-      type = 'gif';
-    } else if (message.document) {
-      if ((message.document as any).attributes?.some((a: any) => a.className === 'DocumentAttributeSticker')) {
-        type = 'sticker';
-      } else {
-        type = 'document';
+    // Pre-warm entity cache com o remetente dessa mensagem e obtém entidade resolvida
+    let senderEntity: any = null;
+    if (client) {
+      try {
+        senderEntity = await warmEntityFromEvent(client, event, instanceId);
+      } catch (warmErr) {
+        console.warn(`${LOG_PREFIX} [${instanceId}] Falha ao fazer warm-up de entidade:`, warmErr);
       }
-    } else {
-      type = 'unknown';
     }
 
-    const baseUrl = process.env.PUBLIC_URL || 'http://localhost:3000';
-    mediaUrl = `${baseUrl}/api/v1/${instanceId}/messages/${message.chatId}/${message.id}/media`;
-  }
+    let phone = '';
+    try {
+      phone = await extractPhoneFromEvent(event, senderEntity, client);
+    } catch (phoneErr) {
+      console.warn(`${LOG_PREFIX} [${instanceId}] Falha ao extrair telefone:`, phoneErr);
+    }
 
-  await dispatchWebhook(instanceId, 'message', {
-    id: message.id,
-    type,
-    content: message.message || '',
-    senderId: message.senderId?.toString(),
-    phone,
-    chatId: message.chatId?.toString(),
-    date: message.date,
-    isOutgoing: message.out,
-    mediaUrl,
-  });
+    try {
+      if (message.media) {
+        const ttl = (message.media as any).ttlSeconds;
+        const isViewOnce = ttl && ttl > 0;
+
+        if (message.photo) {
+          type = isViewOnce ? 'view_once_image' : 'image';
+        } else if (message.video) {
+          type = isViewOnce ? 'view_once_video' : 'video';
+        } else if (message.audio) {
+          type = isViewOnce ? 'view_once_audio' : 'audio';
+        } else if (message.voice) {
+          type = isViewOnce ? 'view_once_voice' : 'voice';
+        } else if (message.gif) {
+          type = 'gif';
+        } else if (message.document) {
+          if ((message.document as any).attributes?.some((a: any) => a.className === 'DocumentAttributeSticker')) {
+            type = 'sticker';
+          } else {
+            type = 'document';
+          }
+        } else {
+          type = 'unknown';
+        }
+
+        const baseUrl = process.env.PUBLIC_URL || 'http://localhost:3000';
+        mediaUrl = `${baseUrl}/api/v1/${instanceId}/messages/${message.chatId}/${message.id}/media`;
+      }
+    } catch (mediaErr) {
+      console.warn(`${LOG_PREFIX} [${instanceId}] Falha ao processar tipo de mídia:`, mediaErr);
+    }
+
+    await dispatchWebhook(instanceId, 'message', {
+      id: message.id,
+      type,
+      content: message.message || '',
+      senderId: message.senderId?.toString(),
+      phone,
+      chatId: message.chatId?.toString(),
+      date: message.date,
+      isOutgoing: message.out,
+      mediaUrl,
+    });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} [${instanceId}] ❌ Erro não tratado em handleNewMessage:`, err);
+  }
 }
 
 export async function handleEditedMessage(instanceId: string, event: EditedMessageEvent, client?: TelegramClient) {
-  const message = event.message;
-  let type = 'text';
-  let mediaUrl = undefined;
+  try {
+    const message = event.message;
+    if (!message) return;
 
-  let senderEntity: any = null;
-  if (client) {
-    senderEntity = await warmEntityFromEvent(client, event, instanceId);
-  }
+    let type = 'text';
+    let mediaUrl = undefined;
 
-  const phone = await extractPhoneFromEvent(event, senderEntity, client);
-
-  if (message.media) {
-    const ttl = (message.media as any).ttlSeconds;
-    const isViewOnce = ttl && ttl > 0;
-
-    if (message.photo) {
-      type = isViewOnce ? 'view_once_image' : 'image';
-    } else if (message.video) {
-      type = isViewOnce ? 'view_once_video' : 'video';
-    } else if (message.audio) {
-      type = isViewOnce ? 'view_once_audio' : 'audio';
-    } else if (message.voice) {
-      type = isViewOnce ? 'view_once_voice' : 'voice';
-    } else if (message.gif) {
-      type = 'gif';
-    } else if (message.document) {
-      if ((message.document as any).attributes?.some((a: any) => a.className === 'DocumentAttributeSticker')) {
-        type = 'sticker';
-      } else {
-        type = 'document';
+    let senderEntity: any = null;
+    if (client) {
+      try {
+        senderEntity = await warmEntityFromEvent(client, event, instanceId);
+      } catch (warmErr) {
+        console.warn(`${LOG_PREFIX} [${instanceId}] Falha ao fazer warm-up de entidade:`, warmErr);
       }
-    } else {
-      type = 'unknown';
     }
 
-    const baseUrl = process.env.PUBLIC_URL || 'http://localhost:3000';
-    mediaUrl = `${baseUrl}/api/v1/${instanceId}/messages/${message.chatId}/${message.id}/media`;
-  }
+    let phone = '';
+    try {
+      phone = await extractPhoneFromEvent(event, senderEntity, client);
+    } catch (phoneErr) {
+      console.warn(`${LOG_PREFIX} [${instanceId}] Falha ao extrair telefone:`, phoneErr);
+    }
 
-  await dispatchWebhook(instanceId, 'edited_message', {
-    id: message.id,
-    type,
-    content: message.message || '',
-    senderId: message.senderId?.toString(),
-    phone,
-    chatId: message.chatId?.toString(),
-    date: message.date,
-    isOutgoing: message.out,
-    mediaUrl,
-  });
+    try {
+      if (message.media) {
+        const ttl = (message.media as any).ttlSeconds;
+        const isViewOnce = ttl && ttl > 0;
+
+        if (message.photo) {
+          type = isViewOnce ? 'view_once_image' : 'image';
+        } else if (message.video) {
+          type = isViewOnce ? 'view_once_video' : 'video';
+        } else if (message.audio) {
+          type = isViewOnce ? 'view_once_audio' : 'audio';
+        } else if (message.voice) {
+          type = isViewOnce ? 'view_once_voice' : 'voice';
+        } else if (message.gif) {
+          type = 'gif';
+        } else if (message.document) {
+          if ((message.document as any).attributes?.some((a: any) => a.className === 'DocumentAttributeSticker')) {
+            type = 'sticker';
+          } else {
+            type = 'document';
+          }
+        } else {
+          type = 'unknown';
+        }
+
+        const baseUrl = process.env.PUBLIC_URL || 'http://localhost:3000';
+        mediaUrl = `${baseUrl}/api/v1/${instanceId}/messages/${message.chatId}/${message.id}/media`;
+      }
+    } catch (mediaErr) {
+      console.warn(`${LOG_PREFIX} [${instanceId}] Falha ao processar tipo de mídia editada:`, mediaErr);
+    }
+
+    await dispatchWebhook(instanceId, 'edited_message', {
+      id: message.id,
+      type,
+      content: message.message || '',
+      senderId: message.senderId?.toString(),
+      phone,
+      chatId: message.chatId?.toString(),
+      date: message.date,
+      isOutgoing: message.out,
+      mediaUrl,
+    });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} [${instanceId}] ❌ Erro não tratado em handleEditedMessage:`, err);
+  }
 }
 
 export async function handleRawEvent(instanceId: string, event: Api.TypeUpdate, client?: TelegramClient) {
-  // ── Atualizações de Chamadas e Vídeo Ligações (MTProto) ───────────────────
-  if (event.className === 'UpdatePhoneCall') {
-    await callManager.handleCallUpdate(instanceId, (event as any).phoneCall);
-    return;
-  }
+  try {
+    // ── Atualizações de Chamadas e Vídeo Ligações (MTProto) ───────────────────
+    if (event.className === 'UpdatePhoneCall') {
+      await callManager.handleCallUpdate(instanceId, (event as any).phoneCall);
+      return;
+    }
 
-  // ── Ações de Usuário (Digitando, Áudio, Foto, Vídeo, Documento) ───────────
-  if (event.className === 'UpdateUserTyping' || event.className === 'UpdateChatUserTyping') {
-    const actionName = (event as any).action?.className || '';
-    const userId = (event as any).userId?.toString();
-    const chatId = (event as any).chatId?.toString() || userId;
+    // ── Ações de Usuário (Digitando, Áudio, Foto, Vídeo, Documento) ───────────
+    if (event.className === 'UpdateUserTyping' || event.className === 'UpdateChatUserTyping') {
+      const actionName = (event as any).action?.className || '';
+      const userId = (event as any).userId?.toString();
+      const chatId = (event as any).chatId?.toString() || userId;
 
-    let phone = '';
-    if (client && userId) {
-      try {
-        const user: any = await client.getEntity(userId);
-        if (user?.phone) {
-          phone = formatPhoneNumber(user.phone);
+      let phone = '';
+      if (client && userId) {
+        try {
+          const user: any = await client.getEntity(userId);
+          if (user?.phone) {
+            phone = formatPhoneNumber(user.phone);
+          }
+        } catch (e) {
+          // Ignora erro
         }
-      } catch (e) {
-        // Ignora erro
       }
+
+      const actionData = {
+        userId,
+        phone,
+        chatId,
+        action: actionName,
+      };
+
+      // Dispara o evento legado/genérico
+      await dispatchWebhook(instanceId, 'typing', actionData);
+
+      // Dispara eventos granulares categorizados
+      if (actionName === 'SendMessageTypingAction') {
+        await dispatchWebhook(instanceId, 'chat.typing', actionData);
+      } else if (actionName === 'SendMessageRecordAudioAction' || actionName === 'SendMessageUploadAudioAction') {
+        await dispatchWebhook(instanceId, 'chat.recording_audio', actionData);
+      } else if (actionName === 'SendMessageUploadPhotoAction') {
+        await dispatchWebhook(instanceId, 'chat.uploading_photo', actionData);
+      } else if (actionName === 'SendMessageUploadVideoAction' || actionName === 'SendMessageRecordVideoAction') {
+        await dispatchWebhook(instanceId, 'chat.uploading_video', actionData);
+      } else if (actionName === 'SendMessageUploadDocumentAction') {
+        await dispatchWebhook(instanceId, 'chat.uploading_document', actionData);
+      }
+      return;
     }
 
-    const actionData = {
-      userId,
-      phone,
-      chatId,
-      action: actionName,
-    };
-
-    // Dispara o evento legado/genérico
-    await dispatchWebhook(instanceId, 'typing', actionData);
-
-    // Dispara eventos granulares categorizados
-    if (actionName === 'SendMessageTypingAction') {
-      await dispatchWebhook(instanceId, 'chat.typing', actionData);
-    } else if (actionName === 'SendMessageRecordAudioAction' || actionName === 'SendMessageUploadAudioAction') {
-      await dispatchWebhook(instanceId, 'chat.recording_audio', actionData);
-    } else if (actionName === 'SendMessageUploadPhotoAction') {
-      await dispatchWebhook(instanceId, 'chat.uploading_photo', actionData);
-    } else if (actionName === 'SendMessageUploadVideoAction' || actionName === 'SendMessageRecordVideoAction') {
-      await dispatchWebhook(instanceId, 'chat.uploading_video', actionData);
-    } else if (actionName === 'SendMessageUploadDocumentAction') {
-      await dispatchWebhook(instanceId, 'chat.uploading_document', actionData);
+    // ── Mensagens Deletadas ──────────────────────────────────────────────────
+    if (event.className === 'UpdateDeleteMessages' || event.className === 'UpdateDeleteChannelMessages') {
+      await dispatchWebhook(instanceId, 'deleted_message', {
+        messages: (event as any).messages,
+        channelId: (event as any).channelId?.toString(),
+        phone: ''
+      });
+      return;
     }
-    return;
-  }
-
-  // ── Mensagens Deletadas ──────────────────────────────────────────────────
-  if (event.className === 'UpdateDeleteMessages' || event.className === 'UpdateDeleteChannelMessages') {
-    await dispatchWebhook(instanceId, 'deleted_message', {
-      messages: (event as any).messages,
-      channelId: (event as any).channelId?.toString(),
-      phone: ''
-    });
-    return;
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} [${instanceId}] ❌ Erro não tratado em handleRawEvent:`, err);
   }
 }

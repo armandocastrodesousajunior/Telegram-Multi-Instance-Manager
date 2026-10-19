@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { checkAuth, unauthorizedResponse } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { telegramManager } from '@/lib/telegram/client';
-import { invalidateInstanceSettingsCache } from '@/lib/telegram/utils';
+import { invalidateInstanceSettingsCache, invalidateWebhooksCache } from '@/lib/telegram/utils';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   let authInstanceId = undefined;
@@ -53,6 +53,11 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     await prisma.instance.delete({
       where: { id }
     });
+
+    await Promise.all([
+      invalidateInstanceSettingsCache(id),
+      invalidateWebhooksCache(id)
+    ]);
 
     return NextResponse.json({ success: true });
   } catch (err: any) {

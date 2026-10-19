@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { checkAuth, unauthorizedResponse } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { invalidateWebhooksCache } from '@/lib/telegram/utils';
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string, webhookId: string }> }) {
   let authInstanceId = undefined;
@@ -13,7 +14,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!(await checkAuth(req, authInstanceId))) return unauthorizedResponse();
 
   try {
-    const { webhookId } = await params;
+    const { id, webhookId } = await params;
     const body = await req.json();
     const { active } = body;
 
@@ -21,6 +22,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       where: { id: webhookId },
       data: { active }
     });
+
+    if (id) {
+      await invalidateWebhooksCache(id);
+    }
 
     return NextResponse.json(webhook);
   } catch (err: any) {

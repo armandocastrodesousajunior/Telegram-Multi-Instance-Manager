@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { checkAuth, unauthorizedResponse } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { invalidateWebhooksCache } from '@/lib/telegram/utils';
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string, webhookId: string }> }) {
   let authInstanceId = undefined;
@@ -13,7 +14,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!(await checkAuth(req, authInstanceId))) return unauthorizedResponse();
 
   try {
-    const { webhookId } = await params;
+    const { id, webhookId } = await params;
     const body = await req.json();
     
     const dataToUpdate: any = {};
@@ -27,6 +28,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       where: { id: webhookId },
       data: dataToUpdate
     });
+
+    if (id) {
+      await invalidateWebhooksCache(id);
+    }
 
     return NextResponse.json({ ...webhook, events: JSON.parse(webhook.events) });
   } catch (err: any) {
@@ -45,11 +50,15 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (!(await checkAuth(req, authInstanceId))) return unauthorizedResponse();
 
   try {
-    const { webhookId } = await params;
+    const { id, webhookId } = await params;
     
     await prisma.webhook.delete({
       where: { id: webhookId }
     });
+
+    if (id) {
+      await invalidateWebhooksCache(id);
+    }
 
     return NextResponse.json({ success: true });
   } catch (err: any) {

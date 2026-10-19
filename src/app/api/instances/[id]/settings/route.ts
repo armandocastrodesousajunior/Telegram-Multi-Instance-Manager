@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { checkAuth, unauthorizedResponse } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { invalidateInstanceSettingsCache } from '@/lib/telegram/utils';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   let authInstanceId = undefined;
@@ -44,8 +45,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       data: body
     });
 
+    await invalidateInstanceSettingsCache(id);
+
     return NextResponse.json(settings);
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
+

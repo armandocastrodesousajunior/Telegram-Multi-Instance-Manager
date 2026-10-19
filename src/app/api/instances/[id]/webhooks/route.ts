@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { checkAuth, unauthorizedResponse } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { invalidateWebhooksCache } from '@/lib/telegram/utils';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   let authInstanceId = undefined;
@@ -69,6 +70,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         includeOutgoing: Boolean(includeOutgoing)
       }
     });
+
+    await invalidateWebhooksCache(id);
 
     return NextResponse.json({ ...webhook, events: JSON.parse(webhook.events) }, { status: 201 });
   } catch (err: any) {

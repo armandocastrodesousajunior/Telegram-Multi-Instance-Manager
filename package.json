@@ -10,6 +10,7 @@
   "dependencies": {
     "@prisma/client": "^6.4.1",
     "input": "^1.0.1",
+    "ioredis": "^6.0.0",
     "lucide-react": "^0.475.0",
     "music-metadata": "^11.13.0",
     "next": "^15.2.8",
@@ -18,6 +19,7 @@
     "telegram": "^2.26.22"
   },
   "devDependencies": {
+    "@types/ioredis": "^4.28.10",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

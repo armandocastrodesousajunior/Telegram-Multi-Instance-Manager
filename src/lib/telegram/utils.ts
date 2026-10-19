@@ -1,35 +1,36 @@
 import { TelegramClient } from 'telegram';
 import { prisma } from '../db';
+import { cacheManager } from '../cache';
 
 const LOG_PREFIX = '[TG-EntityResolver]';
 
-// ── Cache em Memória RAM para InstanceSettings e Instance (TTL: 60s) ────────
-const settingsCache = new Map<string, { data: any; expiresAt: number }>();
-const instanceCache = new Map<string, { data: any; expiresAt: number }>();
+// ── In-Flight Deduplication (Evita Cache Stampede em concorrência extrema) ──
 const inFlightSettings = new Map<string, Promise<any>>();
 const inFlightInstances = new Map<string, Promise<any>>();
+const inFlightWebhooks = new Map<string, Promise<any[]>>();
 
 function getCacheTtl(): number {
-  return parseInt(process.env.INSTANCE_CACHE_TTL_MS || '60000', 10);
+  return parseInt(process.env.INSTANCE_CACHE_TTL_MS || '60', 10);
 }
 
 export async function getCachedInstanceSettings(instanceId: string): Promise<any> {
-  const now = Date.now();
-  const cached = settingsCache.get(instanceId);
-  if (cached && cached.expiresAt > now) {
-    return cached.data;
+  const cacheKey = `tg:settings:${instanceId}`;
+  const cached = await cacheManager.get<any>(cacheKey);
+  if (cached !== null) {
+    return cached === '__NULL__' ? null : cached;
   }
 
   // Se já houver uma consulta em andamento para essa instância, reutiliza a mesma Promise (evita Cache Stampede)
-  if (inFlightSettings.has(instanceId)) {
-    return inFlightSettings.get(instanceId);
+  const inFlight = inFlightSettings.get(instanceId);
+  if (inFlight) {
+    return inFlight;
   }
 
   const fetchPromise = (async () => {
     try {
       const settings = await prisma.instanceSettings.findUnique({ where: { instanceId } });
       // Cacheia mesmo se for null para evitar consultas repetidas contínuas
-      settingsCache.set(instanceId, { data: settings, expiresAt: Date.now() + getCacheTtl() });
+      await cacheManager.set(cacheKey, settings ?? '__NULL__', getCacheTtl());
       return settings;
     } finally {
       inFlightSettings.delete(instanceId);
@@ -41,22 +42,23 @@ export async function getCachedInstanceSettings(instanceId: string): Promise<any
 }
 
 export async function getCachedInstance(instanceId: string): Promise<any> {
-  const now = Date.now();
-  const cached = instanceCache.get(instanceId);
-  if (cached && cached.expiresAt > now) {
-    return cached.data;
+  const cacheKey = `tg:instance:${instanceId}`;
+  const cached = await cacheManager.get<any>(cacheKey);
+  if (cached !== null) {
+    return cached === '__NULL__' ? null : cached;
   }
 
   // Se já houver uma consulta em andamento para essa instância, reutiliza a mesma Promise (evita Cache Stampede)
-  if (inFlightInstances.has(instanceId)) {
-    return inFlightInstances.get(instanceId);
+  const inFlight = inFlightInstances.get(instanceId);
+  if (inFlight) {
+    return inFlight;
   }
 
   const fetchPromise = (async () => {
     try {
       const instance = await prisma.instance.findUnique({ where: { id: instanceId } });
       // Cacheia mesmo se for null
-      instanceCache.set(instanceId, { data: instance, expiresAt: Date.now() + getCacheTtl() });
+      await cacheManager.set(cacheKey, instance ?? '__NULL__', getCacheTtl());
       return instance;
     } finally {
       inFlightInstances.delete(instanceId);
@@ -67,11 +69,50 @@ export async function getCachedInstance(instanceId: string): Promise<any> {
   return fetchPromise;
 }
 
-export function invalidateInstanceSettingsCache(instanceId: string) {
-  settingsCache.delete(instanceId);
-  instanceCache.delete(instanceId);
+export async function getCachedWebhooks(instanceId: string): Promise<any[]> {
+  const cacheKey = `tg:webhooks:${instanceId}`;
+  const cached = await cacheManager.get<any[]>(cacheKey);
+  if (cached !== null) {
+    return cached;
+  }
+
+  const inFlight = inFlightWebhooks.get(instanceId);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const fetchPromise = (async () => {
+    try {
+      const webhooks = await prisma.webhook.findMany({
+        where: {
+          instanceId,
+          active: true,
+        },
+      });
+      const result = webhooks || [];
+      await cacheManager.set(cacheKey, result, 120); // 120 segundos de TTL no cache
+      return result;
+    } finally {
+      inFlightWebhooks.delete(instanceId);
+    }
+  })();
+
+  inFlightWebhooks.set(instanceId, fetchPromise);
+  return fetchPromise;
+}
+
+export async function invalidateInstanceSettingsCache(instanceId: string) {
   inFlightSettings.delete(instanceId);
   inFlightInstances.delete(instanceId);
+  await Promise.all([
+    cacheManager.delete(`tg:settings:${instanceId}`),
+    cacheManager.delete(`tg:instance:${instanceId}`)
+  ]);
+}
+
+export async function invalidateWebhooksCache(instanceId: string) {
+  inFlightWebhooks.delete(instanceId);
+  await cacheManager.delete(`tg:webhooks:${instanceId}`);
 }
 
 // ── Cache em Memória RAM (Camada 0) para Entidades / Peers (TTL: 1h) ────────
