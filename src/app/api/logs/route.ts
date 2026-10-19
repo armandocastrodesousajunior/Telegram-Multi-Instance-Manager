@@ -22,64 +22,101 @@ export async function GET(req: NextRequest) {
       orderBy: { name: 'asc' }
     });
 
-    // 2. Filtros base do Prisma
-    const apiWhere: any = {};
-    const webhookWhere: any = {};
+    // 2. Condições base (escopo da instância e busca)
+    const baseApiConditions: any[] = [];
+    const baseWebhookConditions: any[] = [];
 
     if (instanceId !== 'all') {
-      apiWhere.instanceId = instanceId;
-      webhookWhere.instanceId = instanceId;
+      baseApiConditions.push({ instanceId });
+      baseWebhookConditions.push({ instanceId });
     }
 
     if (search) {
-      apiWhere.OR = [
-        { endpoint: { contains: search, mode: 'insensitive' } },
-        { method: { contains: search, mode: 'insensitive' } },
-        { responseBody: { contains: search, mode: 'insensitive' } },
-        { requestBody: { contains: search, mode: 'insensitive' } },
-        { instance: { name: { contains: search, mode: 'insensitive' } } }
-      ];
+      baseApiConditions.push({
+        OR: [
+          { endpoint: { contains: search, mode: 'insensitive' } },
+          { method: { contains: search, mode: 'insensitive' } },
+          { responseBody: { contains: search, mode: 'insensitive' } },
+          { requestBody: { contains: search, mode: 'insensitive' } },
+          { instance: { name: { contains: search, mode: 'insensitive' } } }
+        ]
+      });
 
-      webhookWhere.OR = [
-        { event: { contains: search, mode: 'insensitive' } },
-        { targetUrl: { contains: search, mode: 'insensitive' } },
-        { responseBody: { contains: search, mode: 'insensitive' } },
-        { requestPayload: { contains: search, mode: 'insensitive' } },
-        { instance: { name: { contains: search, mode: 'insensitive' } } }
-      ];
+      baseWebhookConditions.push({
+        OR: [
+          { event: { contains: search, mode: 'insensitive' } },
+          { targetUrl: { contains: search, mode: 'insensitive' } },
+          { responseBody: { contains: search, mode: 'insensitive' } },
+          { requestPayload: { contains: search, mode: 'insensitive' } },
+          { instance: { name: { contains: search, mode: 'insensitive' } } }
+        ]
+      });
     }
 
-    // Filtros de nível (Level)
-    if (level === 'error') {
-      apiWhere.OR = [
+    // Definições de filtros por nível
+    const apiErrorFilter = {
+      OR: [
         { responseStatus: { gte: 500 } },
-        { success: false }
-      ];
-      webhookWhere.success = false;
-      webhookWhere.NOT = {
-        responseBody: { contains: '"alertType":"RETRY_ATTEMPT"' }
-      };
-    } else if (level === 'alert') {
-      apiWhere.OR = [
+        { success: false, responseStatus: { lt: 400 } },
+        { success: false, responseStatus: 0 }
+      ]
+    };
+    const apiAlertFilter = {
+      OR: [
         { responseStatus: { gte: 400, lt: 500 } },
         { responseStatus: 429 }
-      ];
-      webhookWhere.OR = [
+      ]
+    };
+    const apiInfoFilter = {
+      success: true,
+      responseStatus: { gte: 200, lt: 400 }
+    };
+
+    const webhookErrorFilter = {
+      success: false,
+      NOT: [
         { responseBody: { contains: '"alertType":"RETRY_ATTEMPT"' } },
         { responseBody: { contains: '"alertType":"RETRY_RECOVERED"' } },
         { responseStatus: 429 },
         { responseStatus: 408 }
-      ];
-    } else if (level === 'info') {
-      apiWhere.success = true;
-      apiWhere.responseStatus = { gte: 200, lt: 400 };
-      webhookWhere.success = true;
-      webhookWhere.NOT = {
+      ]
+    };
+    const webhookAlertFilter = {
+      OR: [
+        { responseBody: { contains: '"alertType":"RETRY_ATTEMPT"' } },
+        { responseBody: { contains: '"alertType":"RETRY_RECOVERED"' } },
+        { responseStatus: 429 },
+        { responseStatus: 408 }
+      ]
+    };
+    const webhookInfoFilter = {
+      success: true,
+      NOT: {
         responseBody: { contains: '"alertType":"RETRY_RECOVERED"' }
-      };
+      }
+    };
+
+    // Condições ativas para listagem da tabela
+    const activeApiConditions = [...baseApiConditions];
+    const activeWebhookConditions = [...baseWebhookConditions];
+
+    if (level === 'error') {
+      activeApiConditions.push(apiErrorFilter);
+      activeWebhookConditions.push(webhookErrorFilter);
+    } else if (level === 'alert') {
+      activeApiConditions.push(apiAlertFilter);
+      activeWebhookConditions.push(webhookAlertFilter);
+    } else if (level === 'info') {
+      activeApiConditions.push(apiInfoFilter);
+      activeWebhookConditions.push(webhookInfoFilter);
     }
 
-    // 3. Execução das queries
+    const apiWhere = activeApiConditions.length > 0 ? { AND: activeApiConditions } : {};
+    const webhookWhere = activeWebhookConditions.length > 0 ? { AND: activeWebhookConditions } : {};
+    const baseApiWhere = baseApiConditions.length > 0 ? { AND: baseApiConditions } : {};
+    const baseWebhookWhere = baseWebhookConditions.length > 0 ? { AND: baseWebhookConditions } : {};
+
+    // 3. Execução das queries para listagem
     let apiLogsRaw: any[] = [];
     let webhookLogsRaw: any[] = [];
     let apiCount = 0;
@@ -98,7 +135,7 @@ export async function GET(req: NextRequest) {
           include: { instance: { select: { id: true, name: true } } },
           orderBy: { createdAt: 'desc' },
           skip: type === 'api' ? skip : 0,
-          take: type === 'api' ? limit : Math.min(skip + limit, 150)
+          take: type === 'api' ? limit : skip + limit
         }).then(rows => { apiLogsRaw = rows; })
       );
     }
@@ -111,14 +148,34 @@ export async function GET(req: NextRequest) {
           include: { instance: { select: { id: true, name: true } } },
           orderBy: { createdAt: 'desc' },
           skip: type === 'webhook' ? skip : 0,
-          take: type === 'webhook' ? limit : Math.min(skip + limit, 150)
+          take: type === 'webhook' ? limit : skip + limit
         }).then(rows => { webhookLogsRaw = rows; })
       );
     }
 
+    // 4. Estatísticas globais/escopo (Erros Críticos, Alertas & Retries, API, Webhook)
+    let totalApiCount = 0;
+    let totalWebhookCount = 0;
+    let apiErrors = 0;
+    let webhookErrors = 0;
+    let apiAlerts = 0;
+    let webhookAlerts = 0;
+
+    queries.push(
+      prisma.apiLog.count({ where: baseApiWhere }).then(c => { totalApiCount = c; }).catch(() => 0),
+      prisma.webhookLog.count({ where: baseWebhookWhere }).then(c => { totalWebhookCount = c; }).catch(() => 0),
+      prisma.apiLog.count({ where: { AND: [...baseApiConditions, apiErrorFilter] } }).then(c => { apiErrors = c; }).catch(() => 0),
+      prisma.webhookLog.count({ where: { AND: [...baseWebhookConditions, webhookErrorFilter] } }).then(c => { webhookErrors = c; }).catch(() => 0),
+      prisma.apiLog.count({ where: { AND: [...baseApiConditions, apiAlertFilter] } }).then(c => { apiAlerts = c; }).catch(() => 0),
+      prisma.webhookLog.count({ where: { AND: [...baseWebhookConditions, webhookAlertFilter] } }).then(c => { webhookAlerts = c; }).catch(() => 0)
+    );
+
     await Promise.all(queries);
 
-    // 4. Mapeamento e Normalização para formato unificado
+    const globalErrors = apiErrors + webhookErrors;
+    const globalWebhooksRetried = apiAlerts + webhookAlerts;
+
+    // 5. Mapeamento e Normalização para formato unificado
     const normalizedApiLogs = apiLogsRaw.map(log => {
       let reqBody: any = log.requestBody;
       let resBody: any = log.responseBody;
@@ -126,7 +183,7 @@ export async function GET(req: NextRequest) {
       try { resBody = log.responseBody ? JSON.parse(log.responseBody) : null; } catch {}
 
       let computedLevel: 'ERROR' | 'ALERT' | 'INFO' = 'INFO';
-      if (log.responseStatus >= 500 || (!log.success && log.responseStatus === 0)) {
+      if (log.responseStatus >= 500 || (!log.success && (log.responseStatus === 0 || log.responseStatus < 400))) {
         computedLevel = 'ERROR';
       } else if (log.responseStatus >= 400 && log.responseStatus < 500) {
         computedLevel = 'ALERT';
@@ -200,7 +257,7 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    // 5. Unificação e ordenação
+    // 6. Unificação e ordenação
     let allLogs: any[] = [];
     if (type === 'api') {
       allLogs = normalizedApiLogs;
@@ -214,12 +271,6 @@ export async function GET(req: NextRequest) {
 
     const total = type === 'api' ? apiCount : type === 'webhook' ? webhookCount : (apiCount + webhookCount);
 
-    // 6. Estatísticas rápidas
-    const [globalErrors, globalWebhooksRetried] = await Promise.all([
-      prisma.apiLog.count({ where: { OR: [{ responseStatus: { gte: 500 } }, { success: false }] } }).catch(() => 0),
-      prisma.webhookLog.count({ where: { responseBody: { contains: '"alertType":"RETRY_ATTEMPT"' } } }).catch(() => 0)
-    ]);
-
     return NextResponse.json({
       logs: allLogs,
       pagination: {
@@ -229,9 +280,9 @@ export async function GET(req: NextRequest) {
         totalPages: Math.ceil(total / limit) || 1
       },
       stats: {
-        totalLogs: apiCount + webhookCount,
-        apiCount,
-        webhookCount,
+        totalLogs: totalApiCount + totalWebhookCount,
+        apiCount: totalApiCount,
+        webhookCount: totalWebhookCount,
         globalErrors,
         globalWebhooksRetried
       },
