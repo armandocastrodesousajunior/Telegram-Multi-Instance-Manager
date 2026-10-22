@@ -12,43 +12,71 @@ const apiHash = process.env.TELEGRAM_API_HASH || '';
 
 export class TelegramClientManager {
   private clients: Map<string, TelegramClient> = new Map();
+  private connectingClients: Map<string, Promise<TelegramClient>> = new Map();
 
   async getClient(instanceId: string, sessionStr?: string): Promise<TelegramClient> {
     if (this.clients.has(instanceId)) {
       return this.clients.get(instanceId)!;
     }
 
-    if (!sessionStr) {
-       const instance = await prisma.instance.findUnique({ where: { id: instanceId } });
-       if (!instance) throw new Error("Instance not found");
-       sessionStr = instance.session || '';
+    // Mutex / In-Flight deduplication para evitar que requisições concorrentes
+    // criem múltiplos TelegramClients paralelos com a mesma StringSession (o que causa AUTH_KEY_DUPLICATED)
+    if (this.connectingClients.has(instanceId)) {
+      return this.connectingClients.get(instanceId)!;
     }
 
-    const session = new StringSession(sessionStr);
-    const client = new TelegramClient(session, apiId, apiHash, {
-      connectionRetries: 5,
-    });
-    client.setLogLevel(LogLevel.ERROR);
+    const connectPromise = (async () => {
+      try {
+        if (!sessionStr) {
+          const instance = await prisma.instance.findUnique({ where: { id: instanceId } });
+          if (!instance) throw new Error("Instance not found");
+          sessionStr = instance.session || '';
+        }
 
-    // Passar o client para os handlers para que possam popular o cache de entidades
-    client.addEventHandler((event) => handleNewMessage(instanceId, event, client), new NewMessage({}));
-    client.addEventHandler((event) => handleEditedMessage(instanceId, event, client), new EditedMessage({}));
-    client.addEventHandler((event) => handleRawEvent(instanceId, event, client), new Raw({}));
+        if (!sessionStr || !sessionStr.trim()) {
+          throw new Error("Instance session is empty");
+        }
 
-    try {
-      await client.connect();
-      // Pre-warm entity cache de forma não-bloqueante em background
-      client.getDialogs({ limit: 200 }).catch(() => {});
-    } catch (err) {
-      console.error(`Failed to connect client ${instanceId}:`, err);
-      throw err;
-    }
+        const session = new StringSession(sessionStr);
+        const client = new TelegramClient(session, apiId, apiHash, {
+          connectionRetries: 5,
+        });
+        client.setLogLevel(LogLevel.ERROR);
 
-    this.clients.set(instanceId, client);
-    return client;
+        // Passar o client para os handlers para que possam popular o cache de entidades
+        client.addEventHandler((event) => handleNewMessage(instanceId, event, client), new NewMessage({}));
+        client.addEventHandler((event) => handleEditedMessage(instanceId, event, client), new EditedMessage({}));
+        client.addEventHandler((event) => handleRawEvent(instanceId, event, client), new Raw({}));
+
+        try {
+          await client.connect();
+          // Pre-warm entity cache de forma não-bloqueante em background
+          client.getDialogs({ limit: 200 }).catch(() => {});
+        } catch (err: any) {
+          if (err?.message?.includes('AUTH_KEY_DUPLICATED') || err?.message?.includes('AUTH_KEY_UNREGISTERED')) {
+            console.error(`[TelegramClientManager] ❌ Sessão invalidada/duplicada no Telegram para ${instanceId}:`, err.message);
+            await prisma.instance.update({
+              where: { id: instanceId },
+              data: { status: 'disconnected' }
+            }).catch(() => {});
+          }
+          console.error(`Failed to connect client ${instanceId}:`, err);
+          throw err;
+        }
+
+        this.clients.set(instanceId, client);
+        return client;
+      } finally {
+        this.connectingClients.delete(instanceId);
+      }
+    })();
+
+    this.connectingClients.set(instanceId, connectPromise);
+    return connectPromise;
   }
 
   async removeClient(instanceId: string) {
+    this.connectingClients.delete(instanceId);
     const client = this.clients.get(instanceId);
     if (client) {
       try {
@@ -118,7 +146,16 @@ export class TelegramClientManager {
         return 'disconnected';
       }
     } catch (err: any) {
-      console.warn(`[TelegramClientManager] checkClientStatus para ${instanceId}:`, err?.message);
+      if (err?.message?.includes('AUTH_KEY_DUPLICATED') || err?.message?.includes('AUTH_KEY_UNREGISTERED')) {
+        console.error(`[TelegramClientManager] ❌ Sessão invalidada/duplicada no Telegram para ${instanceId}:`, err.message);
+        await this.removeClient(instanceId).catch(() => {});
+        await prisma.instance.update({
+          where: { id: instanceId },
+          data: { status: 'disconnected' }
+        }).catch(() => {});
+      } else {
+        console.warn(`[TelegramClientManager] checkClientStatus para ${instanceId}:`, err?.message);
+      }
       return 'disconnected';
     }
   }
