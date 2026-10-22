@@ -57,7 +57,7 @@ export class TelegramClientManager {
             console.error(`[TelegramClientManager] ❌ Sessão invalidada/duplicada no Telegram para ${instanceId}:`, err.message);
             await prisma.instance.update({
               where: { id: instanceId },
-              data: { status: 'disconnected' }
+              data: { status: 'disconnected', session: null }
             }).catch(() => {});
           }
           console.error(`Failed to connect client ${instanceId}:`, err);
@@ -73,6 +73,30 @@ export class TelegramClientManager {
 
     this.connectingClients.set(instanceId, connectPromise);
     return connectPromise;
+  }
+
+  /**
+   * Cria um cliente MTProto completamente limpo com nova StringSession vazia
+   * para fluxo de envio de código e autenticação de nova sessão.
+   * Remove e desconecta qualquer cliente anterior em memória.
+   */
+  async createAuthClient(instanceId: string): Promise<TelegramClient> {
+    await this.removeClient(instanceId);
+
+    const session = new StringSession('');
+    const client = new TelegramClient(session, apiId, apiHash, {
+      connectionRetries: 5,
+    });
+    client.setLogLevel(LogLevel.ERROR);
+
+    // Passar o client para os handlers para que possam receber eventos após o login
+    client.addEventHandler((event) => handleNewMessage(instanceId, event, client), new NewMessage({}));
+    client.addEventHandler((event) => handleEditedMessage(instanceId, event, client), new EditedMessage({}));
+    client.addEventHandler((event) => handleRawEvent(instanceId, event, client), new Raw({}));
+
+    await client.connect();
+    this.clients.set(instanceId, client);
+    return client;
   }
 
   async removeClient(instanceId: string) {
@@ -151,7 +175,7 @@ export class TelegramClientManager {
         await this.removeClient(instanceId).catch(() => {});
         await prisma.instance.update({
           where: { id: instanceId },
-          data: { status: 'disconnected' }
+          data: { status: 'disconnected', session: null }
         }).catch(() => {});
       } else {
         console.warn(`[TelegramClientManager] checkClientStatus para ${instanceId}:`, err?.message);
@@ -182,9 +206,13 @@ export class TelegramClientManager {
               });
             } catch (e: any) {
               console.warn(`[reconnectAll] Falha ao reconectar ${instance.name || instance.id}:`, e?.message);
+              const isInvalidSession = e?.message?.includes('AUTH_KEY_DUPLICATED') || e?.message?.includes('AUTH_KEY_UNREGISTERED');
               await prisma.instance.update({
                 where: { id: instance.id },
-                data: { status: 'disconnected' }
+                data: { 
+                  status: 'disconnected',
+                  ...(isInvalidSession ? { session: null } : {})
+                }
               });
             }
           }

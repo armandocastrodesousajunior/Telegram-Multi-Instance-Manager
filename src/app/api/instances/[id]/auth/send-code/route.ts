@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { checkAuth, unauthorizedResponse } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { telegramManager } from '@/lib/telegram/client';
+import { invalidateInstanceStatusCache } from '@/lib/telegram/status';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   let authInstanceId = undefined;
@@ -27,25 +28,37 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: 'Instance not found' }, { status: 404 });
     }
 
-    // Update phone in DB
+    // Atualiza o telefone no banco e limpa a sessão antiga invalidada
     await prisma.instance.update({
       where: { id },
-      data: { phone }
+      data: {
+        phone,
+        session: null,
+        status: 'disconnected'
+      }
     });
 
-    // Connect without a session to initiate auth
-    const client = await telegramManager.getClient(id, '');
+    await invalidateInstanceStatusCache(id);
+
+    // Cria um cliente MTProto completamente limpo com StringSession vazia
+    const client = await telegramManager.createAuthClient(id);
 
     const apiId = parseInt(process.env.TELEGRAM_API_ID || '0', 10);
     const apiHash = process.env.TELEGRAM_API_HASH || '';
 
-    const { phoneCodeHash } = await client.sendCode(
-      { apiId, apiHash },
-      phone
-    );
+    try {
+      const { phoneCodeHash } = await client.sendCode(
+        { apiId, apiHash },
+        phone
+      );
 
-    return NextResponse.json({ success: true, phoneCodeHash });
+      return NextResponse.json({ success: true, phoneCodeHash });
+    } catch (sendErr: any) {
+      await telegramManager.removeClient(id).catch(() => {});
+      throw sendErr;
+    }
   } catch (err: any) {
+    console.error(`[send-code] Erro ao enviar código de autenticação:`, err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

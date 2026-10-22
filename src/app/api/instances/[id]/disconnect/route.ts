@@ -35,7 +35,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     await prisma.instance.update({
       where: { id },
-      data: { status: 'disconnected' }
+      data: {
+        status: 'disconnected',
+        session: null
+      }
     });
 
     await invalidateInstanceStatusCache(id);

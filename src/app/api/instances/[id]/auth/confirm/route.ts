@@ -24,6 +24,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const instance = await prisma.instance.findUnique({ where: { id } });
     if (!instance) return NextResponse.json({ error: 'Instance not found' }, { status: 404 });
 
+    if (!telegramManager.hasClient(id)) {
+      return NextResponse.json({ 
+        error: 'Sessão de autenticação expirada ou reiniciada no servidor. Por favor, solicite um novo código.' 
+      }, { status: 400 });
+    }
+
     const client = await telegramManager.getClient(id);
 
     try {
