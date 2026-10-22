@@ -3,6 +3,7 @@ import { checkAuth, unauthorizedResponse } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { telegramManager } from '@/lib/telegram/client';
 import { invalidateInstanceSettingsCache, invalidateWebhooksCache } from '@/lib/telegram/utils';
+import { getInstanceLiveStatus, invalidateInstanceStatusCache } from '@/lib/telegram/status';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   let authInstanceId = undefined;
@@ -16,6 +17,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   try {
     const { id } = await params;
+    const url = new URL(req.url);
+    const forceRefresh = url.searchParams.get('refresh') === 'true';
+
     const instance = await prisma.instance.findUnique({
       where: { id },
       include: { settings: true, webhooks: true }
@@ -25,8 +29,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
 
+    const liveStatus = await getInstanceLiveStatus(instance, forceRefresh);
     const { session, ...safeInstance } = instance;
-    return NextResponse.json(safeInstance);
+    return NextResponse.json({
+      ...safeInstance,
+      status: liveStatus
+    });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
@@ -56,7 +64,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
     await Promise.all([
       invalidateInstanceSettingsCache(id),
-      invalidateWebhooksCache(id)
+      invalidateWebhooksCache(id),
+      invalidateInstanceStatusCache(id)
     ]);
 
     return NextResponse.json({ success: true });

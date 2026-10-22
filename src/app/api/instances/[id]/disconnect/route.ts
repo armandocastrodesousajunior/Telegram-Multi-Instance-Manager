@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { checkAuth, unauthorizedResponse } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { telegramManager } from '@/lib/telegram/client';
+import { invalidateInstanceStatusCache } from '@/lib/telegram/status';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   let authInstanceId = undefined;
@@ -36,6 +37,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       where: { id },
       data: { status: 'disconnected' }
     });
+
+    await invalidateInstanceStatusCache(id);
 
     await prisma.connectionAudit.create({
       data: {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { checkAuth, unauthorizedResponse } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { telegramManager } from '@/lib/telegram/client';
+import { invalidateInstanceStatusCache } from '@/lib/telegram/status';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   let authInstanceId = undefined;
@@ -47,6 +48,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       where: { id },
       data: { status: 'connected' }
     });
+
+    await invalidateInstanceStatusCache(id);
 
     return NextResponse.json({ success: true, status: 'connected' });
   } catch (err: any) {

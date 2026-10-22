@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { InstanceCard, Instance } from "@/components/InstanceCard";
 import { apiClient } from "@/lib/api-client";
-import { Plus, BookOpen, Activity } from "lucide-react";
+import { Plus, BookOpen, Activity, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { CreateInstanceModal } from "@/components/CreateInstanceModal";
 import { EditInstanceModal } from "@/components/EditInstanceModal";
@@ -31,10 +31,11 @@ export default function Dashboard() {
     fetchInstances();
   }, [router]);
 
-  const fetchInstances = async () => {
+  const fetchInstances = async (forceRefresh = false) => {
     try {
       setLoading(true);
-      const data = await apiClient.get<Instance[]>("/api/instances");
+      const url = forceRefresh ? "/api/instances?refresh=true" : "/api/instances";
+      const data = await apiClient.get<Instance[]>(url);
       setInstances(data);
     } catch (error: any) {
       console.error(error);
@@ -75,6 +76,15 @@ export default function Dashboard() {
             <p style={{ color: "var(--text-secondary)", marginTop: "8px" }}>Manage your Telegram client instances.</p>
           </div>
           <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+            <button 
+              className="btn-secondary" 
+              onClick={() => fetchInstances(true)} 
+              disabled={loading}
+              title="Atualizar status em tempo real"
+              style={{ padding: "10px", display: "flex", alignItems: "center", justifyContent: "center" }}
+            >
+              <RefreshCw size={18} className={loading ? "animate-spin" : ""} />
+            </button>
             <Link href="/docs" className="btn-secondary">
               <BookOpen size={20} />
               API Docs

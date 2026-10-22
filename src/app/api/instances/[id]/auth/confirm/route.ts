@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { telegramManager } from '@/lib/telegram/client';
 import { Api } from 'telegram';
 import { StringSession } from 'telegram/sessions';
+import { invalidateInstanceStatusCache } from '@/lib/telegram/status';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   let authInstanceId = undefined;
@@ -64,6 +65,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         phone: instance.phone
       }
     });
+
+    await invalidateInstanceStatusCache(id);
 
     return NextResponse.json({ success: true, status: 'connected' });
   } catch (err: any) {

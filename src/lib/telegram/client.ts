@@ -37,14 +37,11 @@ export class TelegramClientManager {
 
     try {
       await client.connect();
-      // Pre-warm entity cache to avoid "Could not find the input entity" errors on restart
-      try {
-        await client.getDialogs({ limit: 200 });
-      } catch (cacheErr) {
-        console.error("Failed to warm entity cache:", cacheErr);
-      }
+      // Pre-warm entity cache de forma não-bloqueante em background
+      client.getDialogs({ limit: 200 }).catch(() => {});
     } catch (err) {
-      console.error("Failed to connect client:", err);
+      console.error(`Failed to connect client ${instanceId}:`, err);
+      throw err;
     }
 
     this.clients.set(instanceId, client);
@@ -54,7 +51,9 @@ export class TelegramClientManager {
   async removeClient(instanceId: string) {
     const client = this.clients.get(instanceId);
     if (client) {
-      await client.disconnect();
+      try {
+        await client.disconnect();
+      } catch (e) {}
       this.clients.delete(instanceId);
     }
   }
@@ -63,18 +62,99 @@ export class TelegramClientManager {
     return this.clients.has(instanceId);
   }
 
-  async reconnectAll() {
-    const instances = await prisma.instance.findMany({
-      where: { status: 'connected' }
-    });
-    for (const instance of instances) {
-      if (instance.session) {
-        try {
-          await this.getClient(instance.id, instance.session);
-        } catch (e) {
-          console.error(`Failed to reconnect instance ${instance.id}`, e);
+  /**
+   * Consulta em tempo real se o cliente MTProto está vivo e autenticado nos servidores do Telegram.
+   */
+  async checkClientStatus(instanceId: string, sessionStr?: string | null): Promise<'connected' | 'disconnected'> {
+    try {
+      if (this.clients.has(instanceId)) {
+        const client = this.clients.get(instanceId)!;
+        if (!client.connected) {
+          try {
+            await Promise.race([
+              client.connect(),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('Connect timeout')), 2500))
+            ]);
+          } catch {
+            return 'disconnected';
+          }
+        }
+
+        const isAuth = await Promise.race([
+          client.isUserAuthorized(),
+          new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 2500))
+        ]);
+
+        if (isAuth) {
+          return 'connected';
+        } else {
+          await this.removeClient(instanceId);
+          return 'disconnected';
         }
       }
+
+      if (!sessionStr || !sessionStr.trim()) {
+        return 'disconnected';
+      }
+
+      const client = await Promise.race([
+        this.getClient(instanceId, sessionStr),
+        new Promise<TelegramClient>((_, reject) => setTimeout(() => reject(new Error('GetClient timeout')), 3500))
+      ]);
+
+      if (!client.connected) {
+        return 'disconnected';
+      }
+
+      const isAuth = await Promise.race([
+        client.isUserAuthorized(),
+        new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 2500))
+      ]);
+
+      if (isAuth) {
+        return 'connected';
+      } else {
+        await this.removeClient(instanceId);
+        return 'disconnected';
+      }
+    } catch (err: any) {
+      console.warn(`[TelegramClientManager] checkClientStatus para ${instanceId}:`, err?.message);
+      return 'disconnected';
+    }
+  }
+
+  async reconnectAll() {
+    try {
+      const instances = await prisma.instance.findMany({
+        where: {
+          type: 'USER',
+          session: { not: null }
+        }
+      });
+
+      await Promise.allSettled(
+        instances.map(async (instance) => {
+          if (instance.session) {
+            try {
+              const client = await this.getClient(instance.id, instance.session);
+              const isAuth = await client.isUserAuthorized();
+              const newStatus = isAuth ? 'connected' : 'disconnected';
+              await prisma.instance.update({
+                where: { id: instance.id },
+                data: { status: newStatus }
+              });
+            } catch (e: any) {
+              console.warn(`[reconnectAll] Falha ao reconectar ${instance.name || instance.id}:`, e?.message);
+              await prisma.instance.update({
+                where: { id: instance.id },
+                data: { status: 'disconnected' }
+              });
+            }
+          }
+        })
+      );
+    } catch (err: any) {
+      console.error("[reconnectAll] Erro:", err?.message);
     }
   }
 }

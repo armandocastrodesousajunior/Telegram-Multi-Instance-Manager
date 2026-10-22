@@ -104,7 +104,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     // Check if client is initialized
     if (!telegramManager.hasClient(id)) {
-      return NextResponse.json({ error: 'Client not connected' }, { status: 400 });
+      if (!instance.session) {
+        return NextResponse.json({ error: 'Client not connected' }, { status: 400 });
+      }
+      try {
+        await telegramManager.getClient(id, instance.session);
+      } catch (e) {
+        return NextResponse.json({ error: 'Client not connected' }, { status: 400 });
+      }
     }
 
     const client = await telegramManager.getClient(id);
