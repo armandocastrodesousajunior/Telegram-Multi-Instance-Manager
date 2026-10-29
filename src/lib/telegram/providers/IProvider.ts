@@ -10,6 +10,7 @@ export interface MediaOptions extends MessageOptions {
   caption?: string;
   forceDocument?: boolean;
   voiceNote?: boolean;
+  duration?: number;
 }
 
 export interface ViewOnceOptions extends MediaOptions {

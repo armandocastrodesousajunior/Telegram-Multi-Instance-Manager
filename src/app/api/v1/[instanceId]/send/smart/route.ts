@@ -361,6 +361,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
                 caption: action.caption || '',
                 forceDocument: isDoc,
                 voiceNote: isVoice,
+                duration: action.prefetchedDuration ? Math.round(action.prefetchedDuration / 1000) : undefined,
                 replyToMsgId: replyTo,
                 parseMode: parseMode || undefined
               });
@@ -374,6 +375,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
                   caption: action.caption || '',
                   forceDocument: isDoc,
                   voiceNote: isVoice,
+                  duration: action.prefetchedDuration ? Math.round(action.prefetchedDuration / 1000) : undefined,
                   replyToMsgId: replyTo,
                   parseMode: parseMode || undefined
                 });
