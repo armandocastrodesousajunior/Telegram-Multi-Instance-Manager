@@ -13,6 +13,16 @@ import { getCachedMedia, saveMediaToCache } from '@/lib/telegram/mediaCache';
 import { getOrFetchEntity, getCachedInstance, getCachedInstanceSettings, normalizeNewlines } from '@/lib/telegram/utils';
 import { sendViewOnceFile } from '@/lib/telegram/viewOnce';
 import { generateAudio } from '@/lib/elevenlabs/client';
+import {
+  generateSmartIdempotencyKey,
+  getInFlightSmartRequest,
+  setInFlightSmartRequest,
+  removeInFlightSmartRequest,
+  getSmartCheckpoint,
+  initOrGetSmartCheckpoint,
+  recordActionSuccess,
+  finalizeSmartCheckpoint
+} from '@/lib/telegram/smartCheckpoint';
 
 interface SmartAction {
   type: string;
@@ -44,7 +54,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     const { instanceId } = await params;
     const body = await req.json();
     requestBody = body;
-    const { chatId, replyToMsgId, parseMode } = body;
+    const { chatId, replyToMsgId, parseMode, idempotencyKey: bodyIdempKey, forceResend } = body;
     const rawContent = body.content;
 
     if (!chatId || !rawContent) {
@@ -56,85 +66,132 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
     // Normaliza quebras de linha (literais \n, \r\n de IA e CRLF) para quebras de linha reais (\n)
     const content = normalizeNewlines(rawContent);
 
-    timingBreakdown.authMs = Date.now() - requestStartTime;
+    // ── CAMADA 1 & 2: IDEMPOTÊNCIA & IN-FLIGHT DEDUPLICATION (Alta Escala) ─────
+    const headerIdempKey = req.headers.get('x-idempotency-key') || req.headers.get('idempotency-key');
+    const customKey = bodyIdempKey || headerIdempKey || null;
+    const shouldCheckIdempotency = !forceResend;
+    const checkpointKey = shouldCheckIdempotency
+      ? generateSmartIdempotencyKey(instanceId, chatId, content, customKey)
+      : null;
 
-    const tPrismaStart = Date.now();
-    const instance = await getCachedInstance(instanceId);
-    if (!instance) return NextResponse.json({ error: 'Instance not found' }, { status: 404 });
-    
-    const tProviderStart = Date.now();
-    const provider = await ProviderFactory.getProvider(instance);
-    timingBreakdown.providerMs = Date.now() - tProviderStart;
-    
-    const tSettingsStart = Date.now();
-    const settings = await getCachedInstanceSettings(instanceId);
-    timingBreakdown.prismaMs = Date.now() - tPrismaStart - timingBreakdown.providerMs;
-    
-    const splitEnabled = settings ? settings.splitMessagesEnabled : true;
+    if (checkpointKey) {
+      // 1. In-Flight Dedup: Se já houver uma requisição IDÊNTICA executando neste exato segundo (ex: timeout do cliente HTTP externo)
+      const inFlightPromise = getInFlightSmartRequest(checkpointKey);
+      if (inFlightPromise) {
+        console.log(`[SmartRoute] ⏳ Requisição em andamento detectada para ${checkpointKey}. Aguardando conclusão sem duplicar envios...`);
+        const inFlightResult = await inFlightPromise;
+        return NextResponse.json(inFlightResult);
+      }
 
-    // Parse the content (agora flexível para aceitar outros atributos como transcription)
-    const regex = /<(image|video|audio|voice|document|view_once_image|view_once_video|voice_ai)([^>]*)>(.*?)<\/\1>/gis;
-    
-    const items: SmartAction[] = [];
-    let lastIndex = 0;
-    let match;
+      // 2. Fast-Path: Se a sequência inteira já foi concluída com sucesso nos últimos 5 minutos
+      const existingCheckpoint = await getSmartCheckpoint(checkpointKey);
+      if (existingCheckpoint && existingCheckpoint.status === 'completed' && existingCheckpoint.messageIds?.length > 0) {
+        console.log(`[SmartRoute] ⚡ Sequência já concluída anteriormente para ${checkpointKey}. Retornando resultado do cache.`);
+        const cachedRes = {
+          success: true,
+          totalTimingMs: 0,
+          cached: true,
+          messages: existingCheckpoint.messageIds.map(id => ({ success: true, id, reused: true }))
+        };
+        await logApiRequest({ instanceId, endpoint: '/send/smart', method: 'POST', requestBody: body, responseStatus: 200, responseBody: cachedRes, success: true });
+        return NextResponse.json(cachedRes);
+      }
+    }
 
-    while ((match = regex.exec(content)) !== null) {
-      const textBefore = content.substring(lastIndex, match.index);
-      if (textBefore.trim()) {
-        items.push({ type: 'text', text: textBefore });
+    // Função interna que executa o fluxo com checkpointing por ação
+    const executeSmartFlow = async () => {
+      // 3. Inicializa ou obtém o checkpoint granular
+      const checkpoint = checkpointKey ? await initOrGetSmartCheckpoint(checkpointKey) : null;
+
+      timingBreakdown.authMs = Date.now() - requestStartTime;
+
+      const tPrismaStart = Date.now();
+      const instance = await getCachedInstance(instanceId);
+      if (!instance) {
+        const notFound = new Error('Instance not found');
+        (notFound as any).statusCode = 404;
+        throw notFound;
       }
       
-      const tag = match[1].toLowerCase();
-      const attributesString = match[2];
-      const caption = match[3] ? normalizeNewlines(match[3]) : '';
+      const tProviderStart = Date.now();
+      const provider = await ProviderFactory.getProvider(instance);
+      timingBreakdown.providerMs = Date.now() - tProviderStart;
       
-      const urlMatch = attributesString.match(/url=["']([^"']+)["']/i);
-      const filenameMatch = attributesString.match(/filename=["']([^"']+)["']/i);
+      const tSettingsStart = Date.now();
+      const settings = await getCachedInstanceSettings(instanceId);
+      timingBreakdown.prismaMs = Date.now() - tPrismaStart - timingBreakdown.providerMs;
       
-      items.push({
-        type: tag,
-        url: urlMatch ? urlMatch[1] : undefined,
-        filename: filenameMatch ? filenameMatch[1] : undefined,
-        caption: caption
-      });
-      
-      lastIndex = regex.lastIndex;
-    }
+      const splitEnabled = settings ? settings.splitMessagesEnabled : true;
 
-    const textAfter = content.substring(lastIndex);
-    if (textAfter.trim()) {
-      items.push({ type: 'text', text: textAfter });
-    }
+      // Parse the content (agora flexível para aceitar outros atributos como transcription)
+      const regex = /<(image|video|audio|voice|document|view_once_image|view_once_video|voice_ai)([^>]*)>(.*?)<\/\1>/gis;
+      
+      const items: SmartAction[] = [];
+      let lastIndex = 0;
+      let match;
 
-    // Flatten logic for splitMessagesEnabled
-    const actions: SmartAction[] = [];
-    for (const item of items) {
-      if (item.type === 'text') {
-        const t = normalizeNewlines(item.text).trim();
-        // Se splitEnabled estiver ativado e houver 2 ou mais quebras de linha seguidas (\n\n)
-        if (splitEnabled && /\n{2,}/.test(t)) {
-          const parts = t.split(/\n{2,}/).map(p => p.trim()).filter(p => p !== '');
-          for (const p of parts) {
-            actions.push({ type: 'text', text: p });
+      while ((match = regex.exec(content)) !== null) {
+        const textBefore = content.substring(lastIndex, match.index);
+        if (textBefore.trim()) {
+          items.push({ type: 'text', text: textBefore });
+        }
+        
+        const tag = match[1].toLowerCase();
+        const attributesString = match[2];
+        const caption = match[3] ? normalizeNewlines(match[3]) : '';
+        
+        const urlMatch = attributesString.match(/url=["']([^"']+)["']/i);
+        const filenameMatch = attributesString.match(/filename=["']([^"']+)["']/i);
+        
+        items.push({
+          type: tag,
+          url: urlMatch ? urlMatch[1] : undefined,
+          filename: filenameMatch ? filenameMatch[1] : undefined,
+          caption: caption
+        });
+        
+        lastIndex = regex.lastIndex;
+      }
+
+      const textAfter = content.substring(lastIndex);
+      if (textAfter.trim()) {
+        items.push({ type: 'text', text: textAfter });
+      }
+
+      // Flatten logic for splitMessagesEnabled
+      const actions: SmartAction[] = [];
+      for (const item of items) {
+        if (item.type === 'text') {
+          const t = normalizeNewlines(item.text).trim();
+          // Se splitEnabled estiver ativado e houver 2 ou mais quebras de linha seguidas (\n\n)
+          if (splitEnabled && /\n{2,}/.test(t)) {
+            const parts = t.split(/\n{2,}/).map(p => p.trim()).filter(p => p !== '');
+            for (const p of parts) {
+              actions.push({ type: 'text', text: p });
+            }
+          } else {
+            actions.push({ type: 'text', text: t });
           }
         } else {
-          actions.push({ type: 'text', text: t });
+          if (item.caption) {
+            item.caption = normalizeNewlines(item.caption).trim();
+          }
+          actions.push(item);
         }
-      } else {
-        if (item.caption) {
-          item.caption = normalizeNewlines(item.caption).trim();
-        }
-        actions.push(item);
       }
-    }
 
-    // ==========================================
-    // STAGE 1: PRE-FETCH DE MÍDIAS
-    // ==========================================
-    const tStage1Start = Date.now();
-    for (const action of actions) {
-      if (action.type !== 'text') {
+      // ==========================================
+      // STAGE 1: PRE-FETCH DE MÍDIAS
+      // ==========================================
+      const tStage1Start = Date.now();
+      for (let i = 0; i < actions.length; i++) {
+        const action = actions[i];
+        if (action.type !== 'text') {
+          // OTIMIZAÇÃO SAAS: Se esta ação já foi entregue anteriormente, pula o pre-fetch
+          if (checkpoint?.actions?.[i]?.completed) {
+            console.log(`[SmartRoute] ⏭️ [Stage 1] Ação ${i} (${action.type}) já entregue anteriormente. Pulando pre-fetch.`);
+            continue;
+          }
         const tActionPrefetch = Date.now();
         const isVideo = action.type.includes('video');
         
@@ -259,6 +316,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
           cacheHit: action.timings?.cacheHit || false
         };
 
+        // ── CAMADA 3: RESUME FROM CHECKPOINT (Não reenvia o que já foi entregue) ──
+        if (checkpoint?.actions?.[i]?.completed && checkpoint.actions[i].messageId) {
+          const prevMsgId = checkpoint.actions[i].messageId!;
+          console.log(`[SmartRoute] ⏭️ [Stage 2] Ação ${i} (${action.type}) já entregue anteriormente (msgId=${prevMsgId}). Pulando simulação e envio.`);
+          messageIds.push(prevMsgId);
+          actionTimings.reused = true;
+          actionTimings.totalActionMs = 0;
+          stageTimings.actions.push(actionTimings);
+          firstSent = true;
+          continue;
+        }
+
         if (action.type === 'text') {
           const tSim = Date.now();
           const simResult = await provider.simulateTyping(chatId, action.text);
@@ -272,6 +341,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
           });
           actionTimings.telegramSendMs = Date.now() - tSend;
           messageIds.push(msg.id);
+
+          if (checkpointKey && checkpoint) {
+            await recordActionSuccess(checkpointKey, checkpoint, i, msg.id);
+          }
 
         } else {
           const isPhoto  = action.type.includes('image');
@@ -339,6 +412,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
               actionTimings.telegramSendMs = Date.now() - tSend;
               console.log(`[SmartRoute] View-once enviado. Msg ID: ${msg.id}`);
               messageIds.push(msg.id);
+
+              if (checkpointKey && checkpoint) {
+                await recordActionSuccess(checkpointKey, checkpoint, i, msg.id);
+              }
             } finally {
               // Limpa o temp gerado por nós (não pelo pre-fetch global)
               if (ownedTemp && tempPath && fs.existsSync(tempPath)) {
@@ -387,6 +464,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
             
             console.log(`[SmartRoute] Mídia normal enviada. Msg ID: ${msg.id}`);
             messageIds.push(msg.id);
+
+            if (checkpointKey && checkpoint) {
+              await recordActionSuccess(checkpointKey, checkpoint, i, msg.id);
+            }
             
             if (settings?.mediaCacheEnabled && !action.cachedMedia && instance.type !== 'BOT') {
               const tCache = Date.now();
@@ -403,6 +484,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
         firstSent = true;
       }
       stageTimings.stage2ExecutionMs = Date.now() - tStage2Start;
+
+      // ── Finaliza o Checkpoint como 100% concluído ──
+      if (checkpointKey && checkpoint) {
+        await finalizeSmartCheckpoint(checkpointKey, checkpoint);
+      }
     } finally {
       // ==========================================
       // STAGE 3: LIMPEZA DOS TEMPORÁRIOS
@@ -429,9 +515,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ins
       timingBreakdown,
       messages
     };
-    await logApiRequest({ instanceId, endpoint: '/send/smart', method: 'POST', requestBody: body, responseStatus: 200, responseBody: resData, success: true });
-    return NextResponse.json(resData);
-  } catch (err: any) {
+    return resData;
+  };
+
+  let resData: any;
+  if (checkpointKey) {
+    const execPromise = executeSmartFlow();
+    setInFlightSmartRequest(checkpointKey, execPromise);
+    try {
+      resData = await execPromise;
+    } finally {
+      removeInFlightSmartRequest(checkpointKey);
+    }
+  } else {
+    resData = await executeSmartFlow();
+  }
+
+  await logApiRequest({ instanceId, endpoint: '/send/smart', method: 'POST', requestBody: body, responseStatus: 200, responseBody: resData, success: true });
+  return NextResponse.json(resData);
+} catch (err: any) {
     const errMsg = String(err?.message || err || '');
     const isForbidden = errMsg.includes('CHAT_WRITE_FORBIDDEN') || errMsg.includes('USER_IS_BLOCKED') || errMsg.includes('YOU_BLOCKED_USER');
     const isFlood = errMsg.includes('FLOOD_WAIT') || errMsg.includes('PEER_FLOOD');
